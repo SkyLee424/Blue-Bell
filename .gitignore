@@ -1,0 +1,24 @@
+# 编译生成的二进制文件
+/bin/
+# 本地构建文件
+/pkg/
+# 依赖管理工具（如Go Modules）生成的目录
+/vendor/
+/go.sum
+/go.mod
+# Go编译器和编辑器生成的文件
+*.exe
+*.test
+*.prof
+*.out
+# 工程特定的配置文件
+/.idea/
+.vscode/
+# MacOS系统自动生成的文件
+.DS_Store
+# Windows系统自动生成的文件
+Thumbs.db
+
+/logs
+/config
+/docs
