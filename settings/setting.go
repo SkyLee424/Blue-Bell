@@ -3,7 +3,7 @@ package settings
 import "github.com/spf13/viper"
 
 func InitSettings(confPath string) {
-	viper.SetDefault("server.ip", "127.0.0.1")
+	viper.SetDefault("server.ip", "")
 	viper.SetDefault("server.port", 1145)
 	viper.SetDefault("server.lang", "zh")
 	viper.SetDefault("server.start_time", "2023-10-14")   // 项目开始时间
@@ -20,7 +20,7 @@ func InitSettings(confPath string) {
 	viper.SetDefault("mysql.charset", "utf8mb4")
 
 	viper.SetDefault("redis.host", "127.0.0.1")
-	viper.SetDefault("redis.port", "6379")
+	viper.SetDefault("redis.port", 6379)
 	viper.SetDefault("redis.password", "")
 	viper.SetDefault("redis.db", 0)
 	viper.SetDefault("redis.poolsize", 10)

@@ -10,7 +10,7 @@ BUILD_DIR := bin
 GO := go
 
 # 设置配置文件路径
-CONFIG_PATH = ./config/config.json
+CONFIG_PATH = ./config/config1.json
 
 .PHONY: all clean
 
