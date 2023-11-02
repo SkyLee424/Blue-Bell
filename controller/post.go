@@ -237,7 +237,18 @@ func PostListHandler(ctx *gin.Context) {
 	common.ResponseSuccess(ctx, list)
 }
 
-// 根据 keyword 检索数据，返回 post list
+// PostSearchHandler 帖子搜索接口
+//
+//	@Summary		帖子搜索接口
+//	@Description	根据关键字搜索帖子，包含过期帖子
+//	@Tags			帖子相关接口
+//	@Accept			application/json
+//	@Produce		application/json
+//	@Param			Authorization	header	string							false	"Bearer 用户令牌"
+//	@Param			object			query	models.ParamPostListByKeyword	false	"查询参数"
+//	@Security		ApiKeyAuth
+//	@Success		200	{object}	common.Response{data=[]models.PostDTO}
+//	@Router			/post/search [get]
 func PostSearchHandler(ctx *gin.Context) {
 	// 解析数据
 	params := &models.ParamPostListByKeyword{
