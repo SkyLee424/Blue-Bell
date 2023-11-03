@@ -7,7 +7,7 @@ type Post struct {
 	AuthorID    int64  `gorm:"type:bigint;not null;" json:"author_id"`
 	Status      int8   `gorm:"type:tinyint;not null;default 1;" json:"status"`
 	Title       string `gorm:"type:varchar(128);not null;index:idx_title,class:FULLTEXT" json:"title" binding:"required"`
-	Content     string `gorm:"type:varchar(8192);not null;index:idx_content,class:FULLTEXT,size:256" json:"content" binding:"required"`
+	Content     string `gorm:"type:longtext;not null;index:idx_content,class:FULLTEXT,size:256" json:"content" binding:"required"`
 	CreatedAt   Time   `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"created_at"`
 	UpdatedAt   Time   `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"update_at"`
 }
