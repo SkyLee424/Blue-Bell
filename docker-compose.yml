@@ -1,0 +1,28 @@
+# yaml 配置
+version: "3.7"
+services:
+  mysql8:
+    image: "mysql:latest"
+    ports:
+      - "13306:3306"
+    command: "--default-authentication-plugin=mysql_native_password --init-file /data/application/init.sql"
+    environment:
+      MYSQL_ROOT_PASSWORD: "745896clh."
+      MYSQL_DATABASE: "bluebell"
+      MYSQL_PASSWORD: "745896clh."
+    volumes:
+      - ./init.sql:/data/application/init.sql
+  redis5:
+    image: "redis:latest"
+    ports:
+      - "16379:6379"
+    environment:
+      REDIS_PASSWORD: "745896clh."  
+  bluebell:
+    image: bluebell:latest
+    command: sh -c "./wait-for.sh mysql8:3306 redis5:6379 -- ./bluebell -c ./config.json"
+    depends_on:
+      - mysql8
+      - redis5
+    ports:
+      - "1145:1145"
