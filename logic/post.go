@@ -138,41 +138,6 @@ func GetAllPostList(params *models.ParamPostList) ([]*models.PostDTO, error) {
 	return GetPostListByIDs(postIDs)
 }
 
-// 难点：
-// 1. 怎么高效地在 MySQL 中模糊查询？
-// 2. 怎么建立索引？
-// 3. 全文模糊查询如何实现？
-func GetPostListByKeyword(params *models.ParamPostListByKeyword) ([]*models.PostDTO, error) {
-	// 在 mysql post 中模糊查询标题包含 keyword 的帖子 ID，全文索引
-	postIDs_0, err := mysql.DemoSelectPostIDsByTitleKeyword(params.PageNum, params.PageSize, params.Keyword)
-	if err != nil {
-		return nil, errors.Wrap(err, "")
-	}
-
-	// 在 mysql post 中模糊查询正文包含 keyword 的帖子 ID，全文索引
-	postIDs_1, err := mysql.DemoSelectPostIDsByContentKeyword(params.PageNum, params.PageSize, params.Keyword)
-	if err != nil {
-		return nil, errors.Wrap(err, "")
-	}
-
-	// 组合 ID（注意去重）
-	uniquePostIDs := make(map[string]bool)
-	for _, id := range postIDs_0 {
-		uniquePostIDs[id] = true
-	}
-	for _, id := range postIDs_1 {
-		uniquePostIDs[id] = true
-	}
-	finalPostIDs := make([]string, 0, len(uniquePostIDs))
-	for id := range uniquePostIDs {
-		finalPostIDs = append(finalPostIDs, id)
-	}
-
-	// 根据 ID 获取帖子列表
-	return GetPostListByIDs(finalPostIDs)
-
-}
-
 func GetPostListByKeyword2(params *models.ParamPostListByKeyword) ([]*models.PostDTO, error) {
 	postIDs := make([]string, 0)
 	var err error

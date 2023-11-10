@@ -114,28 +114,6 @@ func SelectPostVoteNumsByIDs(postIDs []string) ([]int64, error) {
 	return voteNums, nil
 }
 
-func DemoSelectPostIDsByTitleKeyword(pageNum, pageSize int64, keyword string) ([]string, error) {
-	return DemoSelectPostIDsByKeyword(pageNum, pageSize, "title", keyword)
-}
-
-func DemoSelectPostIDsByContentKeyword(pageNum, pageSize int64, keyword string) ([]string, error) {
-	return DemoSelectPostIDsByKeyword(pageNum, pageSize, "content", keyword)
-}
-
-func DemoSelectPostIDsByKeyword(pageNum, pageSize int64, match, keyword string) ([]string, error) {
-	sqlStr := "select post_id from posts where MATCH (" + match + ") AGAINST(?) limit ?, ?" // 走全文索引
-	start := (pageNum - 1) * pageSize
-
-	postIDs := make([]string, 0)
-	res := db.Raw(sqlStr, keyword, start, pageSize).Scan(&postIDs)
-
-	if res.Error != nil {
-		return nil, errors.Wrap(res.Error, "get post_ids by "+match+" keyword")
-	}
-
-	return postIDs, res.Error
-}
-
 func UpdatePostStatusByPostIDs(tx *gorm.DB, status int8, postIDs []string) error {
 	useDB := getUseDB(tx)
 	res := useDB.Model(&models.Post{}).Where("post_id in ?", postIDs).Update("status", status) // 走主键索引

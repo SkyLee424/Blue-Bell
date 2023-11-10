@@ -236,43 +236,6 @@ func PostListHandler(ctx *gin.Context) {
 	common.ResponseSuccess(ctx, list)
 }
 
-// PostSearchHandler 帖子搜索接口
-//
-//	@Summary		帖子搜索接口
-//	@Description	根据关键字搜索帖子，包含过期帖子
-//	@Tags			帖子相关接口
-//	@Accept			application/json
-//	@Produce		application/json
-//	@Param			Authorization	header	string							false	"Bearer 用户令牌"
-//	@Param			object			query	models.ParamPostListByKeyword	false	"查询参数"
-//	@Security		ApiKeyAuth
-//	@Success		200	{object}	common.Response{data=[]models.PostDTO}
-//	@Router			/post/search [get]
-func PostSearchHandler(ctx *gin.Context) {
-	// 解析数据
-	params := &models.ParamPostListByKeyword{
-		PageNum:  DefaultPageNum,
-		PageSize: DefaultPageSize,
-		OrderBy:  DefaultOrderBy,
-	}
-	if err := ctx.ShouldBindQuery(params); err != nil {
-		msg := utils.ParseToValidationError(err)
-		common.ResponseErrorWithMsg(ctx, common.CodeInvalidParam, msg)
-		return
-	}
-
-	// 关键字检索
-	postList, err := logic.GetPostListByKeyword(params)
-	if err != nil {
-		common.ResponseError(ctx, common.CodeInternalErr)
-		logger.ErrorWithStack(err)
-		return
-	}
-
-	// 返回帖子列表
-	common.ResponseSuccess(ctx, postList)
-}
-
 // PostSearchHandler2 帖子搜索接口
 //
 //	@Summary		帖子搜索接口
