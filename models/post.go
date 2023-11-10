@@ -12,6 +12,13 @@ type Post struct {
 	UpdatedAt   Time   `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"update_at"`
 }
 
+type PostDoc struct {
+	PostID    int64  `json:"post_id"`
+	Title     string `json:"title"`
+	Content   string `json:"content"`
+	CreatedAt Time   `json:"created_time"`
+}
+
 type PostDTO struct {
 	UserID      int64 `json:"author_id"`
 	CommunityID int64 `json:"community_id"`

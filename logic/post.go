@@ -1,9 +1,11 @@
 package logic
 
 import (
+	"bluebell/dao/elasticsearch"
 	"bluebell/dao/mysql"
 	"bluebell/dao/redis"
 	bluebell "bluebell/errors"
+	"bluebell/internal/utils"
 	"bluebell/models"
 	"strconv"
 	"time"
@@ -23,6 +25,14 @@ func CreatePost(post *models.Post) error {
 	if err := redis.SetPost(post.PostID, post.CommunityID); err != nil {
 		return err
 	}
+
+	// elasticsearch 索引文档
+	elasticsearch.CreatePost(&models.PostDoc{
+		PostID:    post.PostID,
+		Title:     utils.Substr(post.Title, 0, 64),    // 只索引前 64 个字符
+		Content:   utils.Substr(post.Content, 0, 256), // 只索引前 256 个字符
+		CreatedAt: models.Time(time.Now()),
+	})
 
 	return nil
 }
@@ -161,6 +171,22 @@ func GetPostListByKeyword(params *models.ParamPostListByKeyword) ([]*models.Post
 	// 根据 ID 获取帖子列表
 	return GetPostListByIDs(finalPostIDs)
 
+}
+
+func GetPostListByKeyword2(params *models.ParamPostListByKeyword) ([]*models.PostDTO, error) {
+	postIDs := make([]string, 0)
+	var err error
+
+	if params.OrderBy == "time" {
+		postIDs, err = elasticsearch.GetPostIDsByKeywordOrderByTime(params)
+	} else if params.OrderBy == "correlation" {
+		postIDs, err = elasticsearch.GetPostIDsByKeywordOrderByCorrelation(params)
+	}
+	if err != nil {
+		return nil, errors.Wrap(err, "GetPostListByKeyword2: ")
+	}
+
+	return GetPostListByIDs(postIDs)
 }
 
 func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {

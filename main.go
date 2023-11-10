@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bluebell/dao/elasticsearch"
 	"bluebell/dao/mysql"
 	"bluebell/dao/redis"
 	"bluebell/internal/utils"
@@ -40,6 +41,9 @@ func init() {
 
 	redis.InitRedis()
 	logger.Infof("Initializing Redis successfully")
+
+	elasticsearch.Init()
+	logger.Infof("Initializing Elasticsearch successfully")
 
 	router.Init()
 	logger.Infof("Initializing router successfully")

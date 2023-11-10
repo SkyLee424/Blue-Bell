@@ -206,8 +206,7 @@ func PostVoteHandler(ctx *gin.Context) {
 //	@Tags			帖子相关接口
 //	@Accept			application/json
 //	@Produce		application/json
-//	@Param			Authorization	header	string					false	"Bearer 用户令牌"
-//	@Param			object			query	models.ParamPostList	false	"查询参数"
+//	@Param			object	query	models.ParamPostList	false	"查询参数"
 //	@Security		ApiKeyAuth
 //	@Success		200	{object}	common.Response{data=[]models.PostDTO}
 //	@Router			/post/list [get]
@@ -265,6 +264,51 @@ func PostSearchHandler(ctx *gin.Context) {
 	// 关键字检索
 	postList, err := logic.GetPostListByKeyword(params)
 	if err != nil {
+		common.ResponseError(ctx, common.CodeInternalErr)
+		logger.ErrorWithStack(err)
+		return
+	}
+
+	// 返回帖子列表
+	common.ResponseSuccess(ctx, postList)
+}
+
+// PostSearchHandler2 帖子搜索接口
+//
+//	@Summary		帖子搜索接口
+//	@Description	使用 elasticsearch 实现，根据关键字搜索帖子，包含过期帖子
+//	@Tags			帖子相关接口
+//	@Accept			application/json
+//	@Produce		application/json
+//	@Param			object	query	models.ParamPostListByKeyword	false	"查询参数"
+//	@Security		ApiKeyAuth
+//	@Success		200	{object}	common.Response{data=[]models.PostDTO}
+//	@Router			/post/search2 [get]
+func PostSearchHandler2(ctx *gin.Context) {
+	// 解析数据
+	params := &models.ParamPostListByKeyword{
+		PageNum:  DefaultPageNum,
+		PageSize: DefaultPageSize,
+		OrderBy:  "correlation", // 这里使用相关性作为默认排序规则
+	}
+	if err := ctx.ShouldBindQuery(params); err != nil {
+		msg := utils.ParseToValidationError(err)
+		common.ResponseErrorWithMsg(ctx, common.CodeInvalidParam, msg)
+		return
+	}
+	// 拒绝服务
+	if params.PageNum * params.PageSize >= 1e4 {
+		common.ResponseErrorWithMsg(ctx, common.CodeInvalidParam, "Too much data requested")
+		return
+	}
+
+	// 关键字检索
+	postList, err := logic.GetPostListByKeyword2(params)
+	if err != nil {
+		if errors.Is(err, bluebell.ErrInvalidParam) {
+			common.ResponseError(ctx, common.CodeInvalidParam)
+			return
+		}
 		common.ResponseError(ctx, common.CodeInternalErr)
 		logger.ErrorWithStack(err)
 		return

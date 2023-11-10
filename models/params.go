@@ -36,8 +36,8 @@ type ParamPostList struct {
 }
 
 type ParamPostListByKeyword struct {
-	PageNum  int64  `form:"page" binding:"gt=0" example:"1"`    // 页码
-	PageSize int64  `form:"size" binding:"gt=0" example:"10"`   // 每页展示的 post 的数量
-	OrderBy  string `form:"orderby" binding:"oneof=time score"` // 排序方式
-	Keyword  string `form:"keyword" binding:"required"`         // 关键字
+	PageNum  int64  `form:"page" binding:"gt=0" example:"1"`          // 页码
+	PageSize int64  `form:"size" binding:"gt=0" example:"10"`         // 每页展示的 post 的数量
+	OrderBy  string `form:"orderby" binding:"oneof=time correlation"` // 排序方式
+	Keyword  string `form:"keyword" binding:"required"`               // 关键字
 }

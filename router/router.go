@@ -54,8 +54,9 @@ func Init() {
 	postGrp.GET("/:post_id", controller.PostDetailHandler)
 	postGrp.POST("/vote", controller.PostVoteHandler)
 
-	v1.GET("/post/list", controller.PostListHandler)     // 查看列表
-	v1.GET("/post/search", controller.PostSearchHandler) // 搜索不需要登录也可以使用
+	v1.GET("/post/list", controller.PostListHandler)       // 查看列表
+	v1.GET("/post/search", controller.PostSearchHandler)   // 使用 mysql 全文索引实现的搜索
+	v1.GET("/post/search2", controller.PostSearchHandler2) // 使用 es 实现的搜索
 
 }
 
