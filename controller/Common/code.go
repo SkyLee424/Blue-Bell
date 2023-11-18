@@ -7,6 +7,7 @@ const (
 	CodeInternalErr
 	CodeServerBusy
 	CodeInvalidParam
+	CodeNotFound
 	CodeUnsupportedAuthProtocol
 	CodeInvalidToken
 	CodeExpiredToken
@@ -21,6 +22,8 @@ const (
 
 	CodeNoSuchPost
 	CodeVoteTimeExpire
+
+	CodeForbidden
 )
 
 var codeMsgMap = map[Code]string{
@@ -28,6 +31,7 @@ var codeMsgMap = map[Code]string{
 	CodeInternalErr:             "服务繁忙",
 	CodeServerBusy:              "触发限流",
 	CodeInvalidParam:            "无效参数",
+	CodeNotFound:                "未找到",
 	CodeUnsupportedAuthProtocol: "不支持的认证协议",
 	CodeInvalidToken:            "无效 Token",
 	CodeExpiredToken:            "过期 Token",
@@ -42,6 +46,8 @@ var codeMsgMap = map[Code]string{
 
 	CodeNoSuchPost:     "没有该帖子",
 	CodeVoteTimeExpire: "超过投票时间",
+
+	CodeForbidden: "禁止访问",
 }
 
 func (c Code) getMsg() string {

@@ -113,18 +113,3 @@ func PersistenceScore(wg *sync.WaitGroup) {
 // 在过期前，可以正常的投票，也可以在主页面看到该帖子的信息
 // 在过期后，不允许投票，在主页也不可以看到帖子的信息
 // 后续前端添加一个根据 ID 搜索的逻辑，通过这个方式，允许获得过期帖子的信息
-
-// 检查错误，如果有错误：
-//
-// 1. 输出日志
-// 2. 修改 waitTime 为较小值，尽快重试
-// 3. 调用 waitGroup.Done
-func checkError(err error, waitTime *time.Duration, wg *sync.WaitGroup) bool {
-	if err != nil && !errors.Is(err, redis.Nil) {
-		logger.ErrorWithStack(err)
-		*waitTime = time.Second * 10 // 10 s 后再次尝试获取
-		wg.Done()
-		return false
-	}
-	return true
-}

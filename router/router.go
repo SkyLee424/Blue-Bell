@@ -57,6 +57,16 @@ func Init() {
 	v1.GET("/post/list", controller.PostListHandler)       // 查看列表
 	v1.GET("/post/search2", controller.PostSearchHandler2) // 使用 es 实现的搜索
 
+	/* Comment */
+	commentGrp := v1.Group("/comment")
+	commentGrp.Use(middleware.Auth(), middleware.VerifyToken())
+	commentGrp.POST("/create", controller.CommentCreateHandler)
+	commentGrp.DELETE("/remove", controller.CommentRemoveHandler)
+	commentGrp.POST("/like", controller.CommentLikeHandler)
+	commentGrp.POST("/hate", controller.CommentHateHandler)
+	
+	v1.GET("/comment/list", controller.CommentListHandler)
+
 }
 
 func GetServer() *http.Server {

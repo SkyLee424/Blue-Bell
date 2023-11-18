@@ -42,6 +42,20 @@ func InitSettings(confPath string) {
 	viper.SetDefault("service.post.persistence_interval", 43200)
 	viper.SetDefault("service.post.content_max_length", 256)
 
+	viper.SetDefault("service.comment.index.remove_interval", 60)
+	viper.SetDefault("service.comment.index.expire_time", 120)
+
+	viper.SetDefault("service.comment.content.remove_interval", 60)
+	viper.SetDefault("service.comment.content.expire_time", 90)
+
+	viper.SetDefault("service.comment.count.persistence_interval", 90)
+	viper.SetDefault("service.comment.count.expire_time", 150)
+
+	viper.SetDefault("service.comment.like_hate_user.persistence_interval", 60)
+	viper.SetDefault("service.comment.like_hate_user.remove_interval", 30)
+	viper.SetDefault("service.comment.like_hate_user.like_expire_time", 30)
+	viper.SetDefault("service.comment.like_hate_user.hate_expire_time", 30)
+
 	viper.SetDefault("service.swagger.enable", true)
 
 	viper.SetConfigFile(confPath)

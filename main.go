@@ -37,6 +37,11 @@ func init() {
 	mysql.GetDB().AutoMigrate(&models.Community{})
 	mysql.GetDB().AutoMigrate(&models.Post{})
 	mysql.GetDB().AutoMigrate(&models.ExpiredPostScore{})
+	mysql.GetDB().AutoMigrate(&models.CommentSubject{})
+	mysql.GetDB().AutoMigrate(&models.CommentIndex{})
+	mysql.GetDB().AutoMigrate(&models.CommentContent{})
+	mysql.GetDB().AutoMigrate(&models.CommentLikeUser{})
+	mysql.GetDB().AutoMigrate(&models.CommentHateUser{})
 	logger.Infof("Initializing MySQL successfully")
 
 	redis.InitRedis()

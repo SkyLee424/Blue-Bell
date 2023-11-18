@@ -22,6 +22,15 @@ const (
 	KeyPostCommunityZsetPF = "bluebell:post:community:" // member: post_id, score: 0
 	KeyPostVotedZsetPF     = "bluebell:post:voted:"     // parma: post_id, member: user_id, score: opinion
 	KeyCachePF             = "bluebell:cache:"
+
+	// comment
+	KeyCommentIndexZSetPF     = "bluebell:comment:index:"      // param:otype_oid, member:comment_id, score:floor
+	KeyCommentContentStringPF = "bluebell:comment:content:"    // param:comment_id, value:content
+	KeyCommentLikeStringPF    = "bluebell:comment:like:"       // param comment_id, member: count
+	KeyCommentHateStringPF    = "bluebell:comment:hate:"       // param comment_id, member: count
+	KeyCommentLikeSetPF       = "bluebell:comment:likeset:"    // param comment_id, member: user_id
+	KeyCommentHateSetPF       = "bluebell:comment:hateset:"    // param comment_id, member: user_id
+	KeyCommentRemCidUidSet    = "bluebell:comment:rem:cid_uid" // member: cid_uid
 )
 
 var Nil = redis.Nil
@@ -38,4 +47,90 @@ func get(key string) *redis.StringCmd {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 	return rdb.Get(ctx, key)
+}
+
+func Exists(key string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.Exists(ctx, key)
+	return cmd.Val() == 1, errors.Wrap(cmd.Err(), "redis:Exists: Exists")
+}
+
+func ExistsKeys(keys []string) ([]bool, error)  {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	pipe := rdb.Pipeline()
+	for _, key := range keys {
+		pipe.Exists(ctx, key)
+	}
+
+	cmds, err := pipe.Exec(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "redis:ExistsKeys: Exists")
+	}
+
+	exists := make([]bool, len(cmds))
+	for i := 0; i < len(cmds); i++ {
+		cmd := cmds[i].(*redis.IntCmd)
+		exists[i] = cmd.Val() == 1
+	}
+
+	return exists, nil
+}
+
+func GetKeysIdleTime(keys []string) ([]time.Duration, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	pipe := rdb.Pipeline()
+	for _, key := range keys {
+		pipe.ObjectIdleTime(ctx, key)
+	}
+	cmds, err := pipe.Exec(ctx)
+	if err != nil && !errors.Is(err, redis.Nil) {
+		return nil, errors.Wrap(err, "redis:GetCommentLikeOrHateCountByCommentIDs: Get")
+	}
+	idleTimes := make([]time.Duration, len(keys))
+	for i := 0; i < len(cmds); i++ {
+		cmd := cmds[i].(*redis.DurationCmd)
+		if errors.Is(cmd.Err(), redis.Nil) {
+			idleTimes[i] = -1
+		} else {
+			idleTimes[i] = cmd.Val()
+		}
+	}
+	return idleTimes, nil
+}
+
+func GetSetMembersByKey(key string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.SMembers(ctx, key)
+	if cmd.Err() != nil && !errors.Is(cmd.Err(), redis.Nil) {
+		return nil, errors.Wrap(cmd.Err(), "redis:GetSetMembersByKey: SMembers")
+	}
+	return cmd.Val(), nil
+}
+
+func GetKeys(pattern string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.Keys(ctx, pattern)
+	if cmd.Err() != nil && !errors.Is(cmd.Err(), redis.Nil) {
+		return nil, errors.Wrap(cmd.Err(), "redis:GetKeys: Keys")
+	}
+
+	return cmd.Val(), nil
+}
+
+func DelKeys(keys []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.Del(ctx, keys...)
+	return errors.Wrap(cmd.Err(), "redis:DelKeys: Del")
 }
