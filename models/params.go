@@ -67,10 +67,10 @@ type ParamCommentRemove struct {
 
 type ParamCommentLike struct {
 	CommentID int64 `form:"comment_id" binding:"required"`
-	Like      int8  `form:"like" binding:"oneof=1 -1"`
+	// Like      int8  `form:"like" binding:"oneof=1 -1"`
 }
 
 type ParamCommentHate struct {
 	CommentID int64 `form:"comment_id" binding:"required"`
-	Hate      int8  `form:"hate" binding:"oneof=1 -1"`
+	// Hate      int8  `form:"hate" binding:"oneof=1 -1"`
 }

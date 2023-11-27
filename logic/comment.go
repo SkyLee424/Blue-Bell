@@ -342,7 +342,7 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 	return nil
 }
 
-func LikeOrHateForComment(commentID, userID int64, opinion int8, like bool) error {
+func LikeOrHateForComment(commentID, userID int64, like bool) error {
 	// 判断该用户是否点赞（踩）过
 	pre, err := redis.CheckCommentLikeOrHateIfExistUser(commentID, userID, like)
 	if err != nil {
@@ -378,7 +378,7 @@ func LikeOrHateForComment(commentID, userID int64, opinion int8, like bool) erro
 		}
 	}
 
-	if pre && opinion == -1 { // 取消点赞（踩）
+	if pre { // 取消点赞（踩）
 		if err := redis.RemCommentLikeOrHateUser(commentID, userID, like); err != nil {
 			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentLikeOrHateUser")
 		}
@@ -388,9 +388,9 @@ func LikeOrHateForComment(commentID, userID int64, opinion int8, like bool) erro
 			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentRemCidUid")
 		}
 
-		return errors.Wrap(redis.IncrCommentLikeOrHateCount(commentID, int(opinion), like), "logic:LikeOrHateForComment: IncrCommentIndexCountField")
+		return errors.Wrap(redis.IncrCommentLikeOrHateCount(commentID, -1, like), "logic:LikeOrHateForComment: IncrCommentIndexCountField")
 
-	} else if !pre && opinion == 1 { // 点赞（踩）
+	} else { // 点赞（踩）
 		// 先删可能存在的 bluebell:comment:rem:cid_uid（用户之前取消过点赞）
 		// 防止后台任务将我们刚刚添加的 cid_uid 从 db 删掉（这样会导致可以重复点赞）
 		if err := redis.RemCommentRemCidUid(ciduid); err != nil { 
@@ -400,11 +400,11 @@ func LikeOrHateForComment(commentID, userID int64, opinion int8, like bool) erro
 			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentLikeOrHateUser")
 		}
 
-		return errors.Wrap(redis.IncrCommentLikeOrHateCount(commentID, int(opinion), like), "logic:LikeOrHateForComment: IncrCommentIndexCountField")
+		return errors.Wrap(redis.IncrCommentLikeOrHateCount(commentID, 1, like), "logic:LikeOrHateForComment: IncrCommentIndexCountField")
 	}
 
 	// 无效参数
-	return errors.Wrap(bluebell.ErrInvalidParam, "logic:LikeOrHateForComment: invalid opinion")
+	// return errors.Wrap(bluebell.ErrInvalidParam, "logic:LikeOrHateForComment: invalid opinion")
 }
 
 func getCommentIDs(objType int8, objID int64) ([]int64, error) {
