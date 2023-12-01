@@ -208,7 +208,7 @@ func PostVoteHandler(ctx *gin.Context) {
 //	@Produce		application/json
 //	@Param			object	query	models.ParamPostList	false	"查询参数"
 //	@Security		ApiKeyAuth
-//	@Success		200	{object}	common.Response{data=[]models.PostDTO}
+//	@Success		200	{object}	common.Response{data=[]models.PostListDTO}
 //	@Router			/post/list [get]
 func PostListHandler(ctx *gin.Context) {
 	// 解析数据
@@ -225,15 +225,22 @@ func PostListHandler(ctx *gin.Context) {
 		return
 	}
 
-	list, err := logic.GetAllPostList(params)
+	list, total, err := logic.GetAllPostList(params)
 
 	if err != nil {
-		common.ResponseError(ctx, common.CodeInternalErr)
-		logger.ErrorWithStack(err)
+		if errors.Is(err, bluebell.ErrInvalidParam) {
+			common.ResponseError(ctx, common.CodeInvalidParam)	
+		} else {
+			common.ResponseError(ctx, common.CodeInternalErr)
+			logger.ErrorWithStack(err)
+		}
 		return
 	}
 
-	common.ResponseSuccess(ctx, list)
+	common.ResponseSuccess(ctx, &models.PostListDTO{
+		Total: total,
+		Posts: list,
+	})
 }
 
 // PostSearchHandler2 帖子搜索接口
@@ -245,7 +252,7 @@ func PostListHandler(ctx *gin.Context) {
 //	@Produce		application/json
 //	@Param			object	query	models.ParamPostListByKeyword	false	"查询参数"
 //	@Security		ApiKeyAuth
-//	@Success		200	{object}	common.Response{data=[]models.PostDTO}
+//	@Success		200	{object}	common.Response{data=[]models.PostListDTO}
 //	@Router			/post/search2 [get]
 func PostSearchHandler2(ctx *gin.Context) {
 	// 解析数据
@@ -266,7 +273,7 @@ func PostSearchHandler2(ctx *gin.Context) {
 	}
 
 	// 关键字检索
-	postList, err := logic.GetPostListByKeyword2(params)
+	postList, total, err := logic.GetPostListByKeyword2(params)
 	if err != nil {
 		if errors.Is(err, bluebell.ErrInvalidParam) {
 			common.ResponseError(ctx, common.CodeInvalidParam)
@@ -278,5 +285,8 @@ func PostSearchHandler2(ctx *gin.Context) {
 	}
 
 	// 返回帖子列表
-	common.ResponseSuccess(ctx, postList)
+	common.ResponseSuccess(ctx, &models.PostListDTO{
+		Total: total,
+		Posts: postList,
+	})
 }

@@ -118,40 +118,45 @@ func VoteForPost(user_id, post_id int64, direction int8) error {
 	return redis.SetUserPostDirection(post_id, user_id, direction)
 }
 
-func GetAllPostList(params *models.ParamPostList) ([]*models.PostDTO, error) {
+func GetAllPostList(params *models.ParamPostList) ([]*models.PostDTO, int, error) {
 	// 在 redis 中查询 posts 的 id
 	var postIDs []string
 	var err error
+	var total int
 	if params.CommunityID == -1 {
-		postIDs, err = redis.GetPostIDs(params.PageNum, params.PageSize, params.OrderBy) // 默认查询所有 community 的 post
+		postIDs, total, err = redis.GetPostIDs(params.PageNum, params.PageSize, params.OrderBy) // 默认查询所有 community 的 post
 	} else {
-		postIDs, err = redis.GetPostIDsByCommunity(params.PageNum, params.PageSize, params.OrderBy, params.CommunityID)
+		postIDs, total, err = redis.GetPostIDsByCommunity(params.PageNum, params.PageSize, params.OrderBy, params.CommunityID)
 	}
 
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return nil, err
+			return nil, total, nil
 		}
-		return nil, errors.Wrap(err, "get post_id lists from redis") // 避免没有必要的查询
+		return nil, 0, errors.Wrap(err, "get post_id lists from redis") // 避免没有必要的查询
 	}
 
-	return GetPostListByIDs(postIDs)
+	// 分页
+	list, err := GetPostListByIDs(postIDs)
+	return list, total, err
 }
 
-func GetPostListByKeyword2(params *models.ParamPostListByKeyword) ([]*models.PostDTO, error) {
+func GetPostListByKeyword2(params *models.ParamPostListByKeyword) ([]*models.PostDTO, int, error) {
 	postIDs := make([]string, 0)
 	var err error
+	var total int
 
 	if params.OrderBy == "time" {
-		postIDs, err = elasticsearch.GetPostIDsByKeywordOrderByTime(params)
+		postIDs, total, err = elasticsearch.GetPostIDsByKeywordOrderByTime(params)
 	} else if params.OrderBy == "correlation" {
-		postIDs, err = elasticsearch.GetPostIDsByKeywordOrderByCorrelation(params)
+		postIDs, total, err = elasticsearch.GetPostIDsByKeywordOrderByCorrelation(params)
 	}
 	if err != nil {
-		return nil, errors.Wrap(err, "GetPostListByKeyword2: ")
+		return nil, 0, errors.Wrap(err, "logic:GetPostListByKeyword2:elasticsearch")
 	}
 
-	return GetPostListByIDs(postIDs)
+	list, err := GetPostListByIDs(postIDs)
+	return list, total, err
 }
 
 func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {

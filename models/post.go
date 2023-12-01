@@ -38,3 +38,8 @@ type PostDTO struct {
 
 	VoteNum int64 `json:"vote_num"`
 }
+
+type PostListDTO struct {
+	Total int        `json:"total"`
+	Posts []*PostDTO `json:"posts"`
+}

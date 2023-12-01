@@ -96,7 +96,7 @@ func SetUserPostDirection(post_id, user_id int64, direction int8) error {
 	return nil
 }
 
-func GetPostIDs(pageNum, pageSize int64, orderBy string) ([]string, error) {
+func GetPostIDs(pageNum, pageSize int64, orderBy string) ([]string, int, error) {
 	var key string
 	if orderBy == "time" {
 		key = KeyPostTimeZset
@@ -107,7 +107,7 @@ func GetPostIDs(pageNum, pageSize int64, orderBy string) ([]string, error) {
 	return getPostIDHelper(key, pageNum, pageSize)
 }
 
-func GetPostIDsByCommunity(pageNum, pageSize int64, orderBy string, communityID int64) ([]string, error) {
+func GetPostIDsByCommunity(pageNum, pageSize int64, orderBy string, communityID int64) ([]string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
@@ -133,7 +133,7 @@ func GetPostIDsByCommunity(pageNum, pageSize int64, orderBy string, communityID 
 		pipe.Expire(ctx, key, time.Duration(tls)*time.Second)
 		_, err := pipe.Exec(ctx)
 		if err != nil {
-			return nil, errors.Wrap(err, "build cache")
+			return nil, 0, errors.Wrap(err, "build cache")
 		}
 	} else {
 		// 在过期前再次访问，可能是热点 key，重置 TTL
@@ -214,7 +214,7 @@ func GetPostScores(postIDs []string) ([]int64, error) {
 // 获取过期帖子的 ID
 func GetExpiredPostID(targetTimeStamp int64) ([]string, error) {
 	// postIDs 是按照发布时间降序排序的
-	postIDs, err := getPostIDHelper(KeyPostTimeZset, 1, (1 << 62))
+	postIDs, _, err := getPostIDHelper(KeyPostTimeZset, 1, (1 << 62))
 	if err != nil {
 		return nil, errors.Wrap(err, "")
 	}
@@ -311,18 +311,21 @@ func DeleteExpiredPostInCommunity(communityID string, targetTimeStamp int64) err
 	return errors.Wrap(err, "DeletePostInCommunity: delete post in community")
 }
 
-func getPostIDHelper(key string, pageNum, pageSize int64) ([]string, error) {
+func getPostIDHelper(key string, pageNum, pageSize int64) ([]string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
 	start := (pageNum - 1) * pageSize
-	stop := start + pageSize
+	stop := start + pageSize - 1
 
 	cmd := rdb.ZRevRange(ctx, key, start, stop)
 	if cmd.Err() != nil {
-		return nil, errors.Wrap(cmd.Err(), "get post ids")
+		return nil, 0, errors.Wrap(cmd.Err(), "get post ids")
 	}
-	return cmd.Val(), nil
+
+	cmd1 := rdb.ZCard(ctx, key)
+
+	return cmd.Val(), int(cmd1.Val()), errors.Wrap(cmd1.Err(), "redis:getPostIDHelper: ZCard")
 }
 
 // func GetAgreeNum(post_id int64) (int64, error) {

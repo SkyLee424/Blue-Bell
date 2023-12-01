@@ -42,7 +42,7 @@ func GetPostDetail(PostID int64) (*models.PostDoc, error) {
 	return doc, nil
 }
 
-func GetPostIDsByKeywordOrderByCorrelation(params *models.ParamPostListByKeyword) ([]string, error) {
+func GetPostIDsByKeywordOrderByCorrelation(params *models.ParamPostListByKeyword) ([]string, int, error) {
 	query := fmt.Sprintf(`{
 		"query": {
 		  "function_score": {
@@ -102,7 +102,7 @@ func GetPostIDsByKeywordOrderByCorrelation(params *models.ParamPostListByKeyword
 	return getPostIDsHelper(query, params.PageNum, params.PageSize)
 }
 
-func GetPostIDsByKeywordOrderByTime(params *models.ParamPostListByKeyword) ([]string, error) {
+func GetPostIDsByKeywordOrderByTime(params *models.ParamPostListByKeyword) ([]string, int, error) {
 	query := fmt.Sprintf(`{
 		"query": {
 		  "bool": {
@@ -142,7 +142,7 @@ func GetPostIDsByKeywordOrderByTime(params *models.ParamPostListByKeyword) ([]st
 	return getPostIDsHelper(query, params.PageNum, params.PageSize)
 }
 
-func getPostIDsHelper(query string, pageNum, pageSize int64) ([]string, error) {
+func getPostIDsHelper(query string, pageNum, pageSize int64) ([]string, int, error) {
 	ctx := context.Background()
 
 	res, err := lowlevelClnt.Search(
@@ -154,19 +154,19 @@ func getPostIDsHelper(query string, pageNum, pageSize int64) ([]string, error) {
 		// lowlevelClnt.Search.WithFilterPath("aggregations.post_ids.buckets"), // 而不是使用 filterPath
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "elasticsearch: search post failed")
+		return nil, 0, errors.Wrap(err, "elasticsearch: search post failed")
 	}
 
 	// 转换为 *search.Response 类型
 	resp := new(search.Response)
 	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
-		return nil, errors.Wrap(err, "json: decoding the response failed")
+		return nil, 0, errors.Wrap(err, "json: decoding the response failed")
 	}
 
 	// 解析聚合结果
 	aggregations, found := resp.Aggregations["post_ids"]
 	if !found {
-		return nil, errors.Wrap(bluebell.ErrInternal, "elasticsearch: post_ids aggregation not found")
+		return nil, 0, errors.Wrap(bluebell.ErrInternal, "elasticsearch: post_ids aggregation not found")
 	}
 	// 将聚合结果转换为 map
 	postIDsAgg := aggregations.(map[string]any)
@@ -179,7 +179,7 @@ func getPostIDsHelper(query string, pageNum, pageSize int64) ([]string, error) {
 		bucketData := bucket.(map[string]any)
 		key, found := bucketData["key"]
 		if !found {
-			return nil, errors.Wrap(bluebell.ErrInternal, "elasticsearch: key not found in post_ids bucket")
+			return nil, 0, errors.Wrap(bluebell.ErrInternal, "elasticsearch: key not found in post_ids bucket")
 		}
 		postID := key.(float64)
 		postIDs = append(postIDs, strconv.FormatInt(int64(postID), 10))
@@ -188,12 +188,12 @@ func getPostIDsHelper(query string, pageNum, pageSize int64) ([]string, error) {
 	start := (pageNum - 1) * pageSize
 	end := start + pageSize
 	if int(start) >= len(postIDs) { // 错误的分页参数
-		return nil, errors.Wrap(bluebell.ErrInvalidParam, "elasticsearch: wrong paging parameters")
+		return nil, 0, errors.Wrap(bluebell.ErrInvalidParam, "elasticsearch: wrong paging parameters")
 	}
 	if int(end) > len(postIDs) {
 		end = int64(len(postIDs))
 	}
-	return postIDs[start:end], nil
+	return postIDs[start:end], len(postIDs),nil
 }
 
 func UpdatePost(doc *models.PostDoc) error {
