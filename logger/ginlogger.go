@@ -23,7 +23,7 @@ func GinLogger() gin.HandlerFunc {
 			cost,
 			ctx.ClientIP(),
 			ctx.Request.Method,
-			ctx.Request.URL.RawQuery)
+			ctx.Request.URL)
 	}
 }
 
