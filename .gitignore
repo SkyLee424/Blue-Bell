@@ -23,4 +23,5 @@ Thumbs.db
 /config
 /docs
 /Note
+/temp
 .dockerignore
