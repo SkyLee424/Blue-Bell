@@ -52,7 +52,7 @@ func SetUserAccessToken(userID int64, accessTokenStr string, expireDuration time
 func GetUserAccessToken(userID int64) (string, error) {
 	access_token, err := redis.GetUserAccessToken(userID)
 	if err != nil {
-		if err != redis.Nil {
+		if !errors.Is(err, redis.Nil) {
 			return "", errors.Wrap(err, "get user access_token")
 		}
 	}
