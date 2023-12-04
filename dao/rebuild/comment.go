@@ -9,16 +9,14 @@ import (
 	"github.com/pkg/errors"
 )
 
-func RebuildCommentLikeOrHateSet(commentID, userID int64, like bool) (bool, error) {
-	CidUid := fmt.Sprintf("%v:%v", commentID, userID)
-
+func RebuildCommentLikeOrHateSet(commentID, userID, objID int64, objType int8, like bool) (bool, error) {
 	// 读 db，判断该用户是否给该评论点过赞
-	exist, err := mysql.CheckCidUidIfExist(nil, CidUid, like)
+	exist, err := mysql.CheckCidUidIfExist(nil, commentID, userID, like)
 	if err != nil {
 		return false, errors.Wrap(err, "rebuild:RebuildCommentLikeOrHateSet: CheckCidUidIfExist")
 	}
 	if exist {
-		err := redis.AddCommentLikeOrHateUser(commentID, userID, like)
+		err := redis.AddCommentLikeOrHateUser(commentID, userID, objID, objType, like)
 		if err != nil {
 			return false, errors.Wrap(err, "rebuild:RebuildCommentLikeOrHateSet: AddCommentLikeOrHateUser")
 		}

@@ -7,6 +7,7 @@ import (
 	"bluebell/logger"
 	"errors"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -120,11 +121,16 @@ func PersistenceCommentCidUid(wg *sync.WaitGroup, like bool) {
 					continue rootloop
 				}
 
-				commentIDStr := utils.Substr(expiredKeys[i], len(redis.KeyCommentLikeSetPF), len(expiredKeys[i]))
+				tmpStr := utils.Substr(expiredKeys[i], len(redis.KeyCommentLikeSetPF), len(expiredKeys[i]))
+				tmpStrArr := strings.Split(tmpStr, "_")
+				commentID, _ := strconv.ParseInt(tmpStrArr[0], 10, 64)
+				objID, _ := strconv.ParseInt(tmpStrArr[1], 10, 64)
+				objType, _ := strconv.ParseInt(tmpStrArr[2], 10, 8)
 				tx := mysql.GetDB().Begin()
 				// 持久化
 				for i := 0; i < len(UserIDs); i++ {
-					err := mysql.CreateCommentLikeOrHateUser(tx, commentIDStr+":"+UserIDs[i], like)
+					userID, _ := strconv.ParseInt(UserIDs[i], 10, 64)
+					err := mysql.CreateCommentLikeOrHateUser(tx, commentID, userID, objID, int8(objType), like)
 					if !checkError(err, &waitTime, wg) {
 						tx.Rollback()
 						continue rootloop // ?
@@ -153,30 +159,34 @@ func RemoveCommentCidUidFromDB(wg *sync.WaitGroup) {
 			time.Sleep(waitTime)
 			wg.Add(1)
 
-			ciduids, err := redis.GetSetMembersByKey(redis.KeyCommentRemCidUidSet)
+			commentIDStrs, err := redis.GetSetMembersByKey(redis.KeyCommentRemCidSet)
 			if !checkError(err, &waitTime, wg) {
 				continue
 			}
 
 			// 不需要删除
-			if len(ciduids) == 0 {
+			if len(commentIDStrs) == 0 {
 				wg.Done()
 				continue
 			}
 
-			err = mysql.DeleteCommentLikeUserByCidUids(nil, ciduids)
+			commentIDs := make([]int64, len(commentIDStrs))
+			for i := 0; i < len(commentIDStrs); i++ {
+				commentIDs[i], _ = strconv.ParseInt(commentIDStrs[i], 10, 64)
+			}
+			err = mysql.DeleteCommentUserLikeMappingByCommentIDs(nil, commentIDs)
 			if !checkError(err, &waitTime, wg) {
 				continue
 			}
 
-			logger.Infof("workers:RemoveCommentCidUid: Removed %d ciduid in mysql", len(ciduids))
+			logger.Infof("workers:RemoveCommentCidUid: Removed %d ciduid in mysql", len(commentIDs))
 
-			err = redis.DelKeys([]string{redis.KeyCommentRemCidUidSet})
+			err = redis.DelKeys([]string{redis.KeyCommentRemCidSet})
 			if !checkError(err, &waitTime, wg) {
 				continue
 			}
 
-			logger.Infof("workers:RemoveCommentCidUid: Removed %d ciduid in mysql", len(ciduids))
+			logger.Infof("workers:RemoveCommentCidUid: Removed %d ciduid in redis", len(commentIDs))
 			wg.Done()
 		}
 	}()

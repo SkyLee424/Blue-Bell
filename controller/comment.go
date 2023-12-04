@@ -132,7 +132,7 @@ func CommentLikeHandler(ctx *gin.Context) {
 		common.ResponseErrorWithMsg(ctx, common.CodeInvalidParam, utils.ParseToValidationError(err))
 		return
 	}
-	commentLikeHateHelper(ctx, params.CommentID, true)
+	commentLikeHateHelper(ctx, params.CommentID, params.ObjID, params.ObjType, true)
 }
 
 // CommentRemoveHandler 评论点踩接口
@@ -153,12 +153,12 @@ func CommentHateHandler(ctx *gin.Context) {
 		common.ResponseErrorWithMsg(ctx, common.CodeInvalidParam, utils.ParseToValidationError(err))
 		return
 	}
-	commentLikeHateHelper(ctx, params.CommentID, false)
+	commentLikeHateHelper(ctx, params.CommentID, params.ObjID, params.ObjType, false)
 }
 
-func commentLikeHateHelper(ctx *gin.Context, commentID int64, like bool) {
+func commentLikeHateHelper(ctx *gin.Context, commentID, objID int64, objType int8, like bool) {
 	userID := ctx.GetInt64("user_id")
-	if err := logic.LikeOrHateForComment(commentID, userID, like); err != nil {
+	if err := logic.LikeOrHateForComment(userID, commentID, objID, objType, like); err != nil {
 		// if errors.Is(err, bluebell.ErrInvalidParam) {
 		// 	common.ResponseError(ctx, common.CodeInvalidParam)
 		// } else {

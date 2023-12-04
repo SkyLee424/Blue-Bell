@@ -10,7 +10,6 @@ import (
 	"bluebell/models"
 	"fmt"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/pkg/errors"
@@ -300,10 +299,10 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 		}
 	}
 
-	ciduids := make([]string, len(commentIDs))
-	for i := 0; i < len(ciduids); i++ {
-		ciduids[i] = fmt.Sprintf("%v:%v", commentIDs[i], userID)
-	}
+	// ciduids := make([]string, len(commentIDs))
+	// for i := 0; i < len(ciduids); i++ {
+	// 	ciduids[i] = fmt.Sprintf("%v:%v", commentIDs[i], userID)
+	// }
 
 	// 根据 ID 删除评论
 	// 事务删除
@@ -315,13 +314,13 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 		tx.Rollback()
 		return errors.Wrap(err, "logic:RemoveComment: DeleteCommentContentByCommentIDs")
 	}
-	if err := mysql.DeleteCommentLikeUserByCidUids(tx, ciduids); err != nil {
+	if err := mysql.DeleteCommentUserLikeMappingByCommentIDs(tx, commentIDs); err != nil {
 		tx.Rollback()
-		return errors.Wrap(err, "logic:RemoveComment: DeleteCommentLikeUserByCidUids")
+		return errors.Wrap(err, "logic:RemoveComment: DeleteCommentUserLikeMappingByCommentIDs")
 	}
-	if err := mysql.DeleteCommentHateUserByCidUids(tx, ciduids); err != nil {
+	if err := mysql.DeleteCommentUserHateMappingByCommentIDs(tx, commentIDs); err != nil {
 		tx.Rollback()
-		return errors.Wrap(err, "logic:RemoveComment: DeleteCommentLikeUserByCidUids")
+		return errors.Wrap(err, "logic:RemoveComment: DeleteCommentUserHateMappingByCommentIDs")
 	}
 
 	tx.Commit()
@@ -336,41 +335,41 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 	redis.DelCommentContentsByCommentIDs(commentIDs)
 	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, true)
 	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, false)
-	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, true)
-	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, false)
+	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, true)
+	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, false)
 
 	return nil
 }
 
-func LikeOrHateForComment(commentID, userID int64, like bool) error {
+func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like bool) error {
 	// 判断该用户是否点赞（踩）过
-	pre, err := redis.CheckCommentLikeOrHateIfExistUser(commentID, userID, like)
+	pre, err := redis.CheckCommentLikeOrHateIfExistUser(commentID, userID, objID, objType, like)
 	if err != nil {
 		return errors.Wrap(err, "logic:LikeOrHateForComment: CheckCommentLikeOrHateIfExistUser")
 	}
 
-	ciduid := fmt.Sprintf("%d:%d", commentID, userID)
 	if !pre { // 可能没有点赞过
 		// check if cache miss
 		key := redis.KeyCommentLikeSetPF
 		if !like {
 			key = redis.KeyCommentHateSetPF
 		}
-		key = key + strconv.FormatInt(commentID, 10)
+		// key = key + strconv.FormatInt(commentID, 10)
+		key = fmt.Sprintf("%s%d_%d_%d", key, commentID, objID, objType)
 		exist, err := redis.Exists(key)
 		if err != nil {
 			return errors.Wrap(err, "logic:LikeOrHateForComment: Exists")
 		}
 		if !exist {
 			// cache miss,
-			// 由于加了缓存，bluebell:comment:rem:cid_uid 可能还没来得及持久化到 db（删除 cid_uid），如果直接重建，会获取到脏数据
+			// 由于加了缓存，bluebell:comment:rem:cid 可能还没来得及持久化到 db（删除 cid），如果直接重建，会获取到脏数据
 			// 先检查一下，确定是否重建
-			exist2, err := redis.CheckCommentRemCidUidIfExistCidUid(ciduid)
+			exist2, err := redis.CheckCommentRemCidIfExistCid(commentID)
 
 			if err == nil && exist2 { // 说明用户尝试过取消点赞，但还没来得及持久化到 db 的 ciduid 表
 				pre = false
 			} else { // 不存在，cache rebuild
-				pre, err = rebuild.RebuildCommentLikeOrHateSet(commentID, userID, like)
+				pre, err = rebuild.RebuildCommentLikeOrHateSet(commentID, userID, objID, objType, like)
 				if err != nil {
 					return errors.Wrap(err, "logic:LikeOrHateForComment: RebuildCommentLikeOrHateSet")
 				}
@@ -379,12 +378,12 @@ func LikeOrHateForComment(commentID, userID int64, like bool) error {
 	}
 
 	if pre { // 取消点赞（踩）
-		if err := redis.RemCommentLikeOrHateUser(commentID, userID, like); err != nil {
+		if err := redis.RemCommentLikeOrHateUser(commentID, userID, objID, objType, like); err != nil {
 			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentLikeOrHateUser")
 		}
 		// 还要删除 db 的 cid_uid
 		// 这里添加到缓存，由后台任务负责删除
-		if err := redis.AddCommentRemCidUid(ciduid); err != nil {
+		if err := redis.AddCommentRemCid(commentID); err != nil {
 			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentRemCidUid")
 		}
 
@@ -393,10 +392,10 @@ func LikeOrHateForComment(commentID, userID int64, like bool) error {
 	} else { // 点赞（踩）
 		// 先删可能存在的 bluebell:comment:rem:cid_uid（用户之前取消过点赞）
 		// 防止后台任务将我们刚刚添加的 cid_uid 从 db 删掉（这样会导致可以重复点赞）
-		if err := redis.RemCommentRemCidUid(ciduid); err != nil { 
+		if err := redis.RemCommentRemCid(commentID); err != nil {
 			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentRemCidUid")
 		}
-		if err := redis.AddCommentLikeOrHateUser(commentID, userID, like); err != nil {
+		if err := redis.AddCommentLikeOrHateUser(commentID, userID, objID, objType, like); err != nil {
 			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentLikeOrHateUser")
 		}
 
@@ -405,6 +404,15 @@ func LikeOrHateForComment(commentID, userID int64, like bool) error {
 
 	// 无效参数
 	// return errors.Wrap(bluebell.ErrInvalidParam, "logic:LikeOrHateForComment: invalid opinion")
+}
+
+func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserLikeOrHateList) ([]int64, error) {
+	// demo
+	list, err := mysql.SelectCommentUserLikeOrHateList(nil, userID, params.ObjID, params.ObjType, params.Like)
+	if err != nil {
+		return nil, errors.Wrap(err, "logic:GetCommentUserLikeOrHateList: SelectCommentUserLikeOrHateList")
+	}
+	return list, nil
 }
 
 func getCommentIDs(objType int8, objID int64) ([]int64, error) {

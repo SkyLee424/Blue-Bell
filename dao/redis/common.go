@@ -24,13 +24,15 @@ const (
 	KeyCachePF             = "bluebell:cache:"
 
 	// comment
-	KeyCommentIndexZSetPF     = "bluebell:comment:index:"      // param:otype_oid, member:comment_id, score:floor
-	KeyCommentContentStringPF = "bluebell:comment:content:"    // param:comment_id, value:content
-	KeyCommentLikeStringPF    = "bluebell:comment:like:"       // param comment_id, member: count
-	KeyCommentHateStringPF    = "bluebell:comment:hate:"       // param comment_id, member: count
-	KeyCommentLikeSetPF       = "bluebell:comment:likeset:"    // param comment_id, member: user_id
-	KeyCommentHateSetPF       = "bluebell:comment:hateset:"    // param comment_id, member: user_id
-	KeyCommentRemCidUidSet    = "bluebell:comment:rem:cid_uid" // member: cid_uid
+	KeyCommentIndexZSetPF     = "bluebell:comment:index:"       // param:otype_oid, member:comment_id, score:floor
+	KeyCommentContentStringPF = "bluebell:comment:content:"     // param:comment_id, value:content
+	KeyCommentLikeStringPF    = "bluebell:comment:like:"        // param comment_id, member: count
+	KeyCommentHateStringPF    = "bluebell:comment:hate:"        // param comment_id, member: count
+	KeyCommentLikeSetPF       = "bluebell:comment:likeset:"     // param cid_oid_otype, member: user_id
+	KeyCommentHateSetPF       = "bluebell:comment:hateset:"     // param cid_oid_otype, member: user_id
+	KeyCommentUserLikeIDsPF   = "bluebell:comment:userlikeids:" // param uid_oid_otype, member: comment_id
+	KeyCommentUserHateIDsPF   = "bluebell:comment:userhateids:" // param uid_oid_otype, member: comment_id
+	KeyCommentRemCidSet       = "bluebell:comment:rem:cid"      // member: comment_id
 )
 
 var Nil = redis.Nil
@@ -57,7 +59,7 @@ func Exists(key string) (bool, error) {
 	return cmd.Val() == 1, errors.Wrap(cmd.Err(), "redis:Exists: Exists")
 }
 
-func ExistsKeys(keys []string) ([]bool, error)  {
+func ExistsKeys(keys []string) ([]bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 

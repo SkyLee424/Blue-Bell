@@ -29,17 +29,23 @@ func CreateCommentSubject(tx *gorm.DB, ID, objID int64, objType int8) error {
 	return errors.Wrap(res.Error, "mysql: CreateCommentSubject failed")
 }
 
-func CreateCommentLikeOrHateUser(tx *gorm.DB, CidUid string, like bool) error {
+func CreateCommentLikeOrHateUser(tx *gorm.DB, commentID, userID, objID int64, objType int8, like bool) error {
 	useDB := getUseDB(tx)
 	var res *gorm.DB
 
 	if like {
-		res = useDB.Create(&models.CommentLikeUser{
-			CidUid: CidUid,
+		res = useDB.Create(&models.CommentUserLikeMapping{
+			CommentID: commentID,
+			UserID:    userID,
+			ObjID:     objID,
+			ObjType:   objType,
 		})
 	} else {
-		res = useDB.Create(&models.CommentHateUser{
-			CidUid: CidUid,
+		res = useDB.Create(&models.CommentUserHateMapping{
+			CommentID: commentID,
+			UserID:    userID,
+			ObjID:     objID,
+			ObjType:   objType,
 		})
 	}
 
@@ -205,14 +211,14 @@ func CheckIsRootComment(tx *gorm.DB, commentID int64) (bool, error) {
 	return root == 0, errors.Wrap(res.Error, "mysql: CheckIsRootComment")
 }
 
-func CheckCidUidIfExist(tx *gorm.DB, CidUid string, like bool) (bool, error) {
+func CheckCidUidIfExist(tx *gorm.DB, commentID, userID int64, like bool) (bool, error) {
 	useDB := getUseDB(tx)
 	var res *gorm.DB
 	var count int
 	if like {
-		res = useDB.Model(&models.CommentLikeUser{}).Select("count(*)").Where("cid_uid = ?", CidUid).Scan(&count)
+		res = useDB.Model(&models.CommentUserLikeMapping{}).Select("count(*)").Where("comment_id = ? and user_id = ?", commentID, userID).Scan(&count)
 	} else {
-		res = useDB.Model(&models.CommentHateUser{}).Select("count(*)").Where("cid_uid = ?", CidUid).Scan(&count)
+		res = useDB.Model(&models.CommentUserHateMapping{}).Select("count(*)").Where("comment_id = ? and user_id = ?", commentID, userID).Scan(&count)
 	}
 	return count == 1, errors.Wrap(res.Error, "mysql: CheckCidUidIfExist")
 }
@@ -246,14 +252,29 @@ func DeleteCommentContentByCommentIDs(tx *gorm.DB, commentIDs []int64) error {
 	return errors.Wrap(res.Error, "mysql: DeleteCommentContentByCommentIDs")
 }
 
-func DeleteCommentLikeUserByCidUids(tx *gorm.DB, ciduids []string) error {
+func DeleteCommentUserLikeMappingByCommentIDs(tx *gorm.DB, commentIDs []int64) error {
 	useDB := getUseDB(tx)
-	res := useDB.Delete(&models.CommentLikeUser{}, "cid_uid in ?", ciduids)
-	return errors.Wrap(res.Error, "mysql: DeleteCommentLikeUserByCidUids")
+	res := useDB.Delete(&models.CommentUserLikeMapping{}, "comment_id in ?", commentIDs)
+	return errors.Wrap(res.Error, "mysql: DeleteCommentUserLikeMappingByCommentIDs")
 }
 
-func DeleteCommentHateUserByCidUids(tx *gorm.DB, ciduids []string) error {
+func DeleteCommentUserHateMappingByCommentIDs(tx *gorm.DB, commentIDs []int64) error {
 	useDB := getUseDB(tx)
-	res := useDB.Delete(&models.CommentHateUser{}, "cid_uid in ?", ciduids)
-	return errors.Wrap(res.Error, "mysql: DeleteCommentHateUserByCidUids")
+	res := useDB.Delete(&models.CommentUserHateMapping{}, "comment_id in ?", commentIDs)
+	return errors.Wrap(res.Error, "mysql: DeleteCommentUserHateMappingByCommentIDs")
+}
+
+func SelectCommentUserLikeOrHateList(tx *gorm.DB, userID, ObjID int64, ObjType int8, Like bool) ([]int64, error) {
+	useDB := getUseDB(tx)
+	var res *gorm.DB
+	var commentIDs []int64
+	if Like {
+		res = useDB.Model(&models.CommentUserLikeMapping{}).Select("comment_id").Where("user_id = ? and obj_id = ? and obj_type = ?", userID, ObjID, ObjType).Scan(&commentIDs)
+	} else {
+		res = useDB.Model(&models.CommentUserHateMapping{}).Select("comment_id").Where("user_id = ? and obj_id = ? and obj_type = ?", userID, ObjID, ObjType).Scan(&commentIDs)
+	}
+	if res.Error != nil {
+		return nil, errors.Wrap(res.Error, "mysql:SelectCommentUserLikeOrHateList")
+	}
+	return commentIDs, nil
 }

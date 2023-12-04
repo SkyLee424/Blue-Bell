@@ -120,8 +120,8 @@ func DelCommentContentsByCommentIDs(commentIDs []int64) error {
 }
 
 /* bluebell:comment:likeset: */
-func CheckCommentLikeOrHateIfExistUser(commentID, userID int64, like bool) (bool, error) {
-	key := getCommentLikeOrHateSetKey(commentID, like)
+func CheckCommentLikeOrHateIfExistUser(commentID, userID, objID int64, objType int8, like bool) (bool, error) {
+	key := getCommentLikeOrHateSetKey(commentID, objID, objType, like)
 
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
@@ -130,8 +130,8 @@ func CheckCommentLikeOrHateIfExistUser(commentID, userID int64, like bool) (bool
 	return cmd.Val(), errors.Wrap(cmd.Err(), "redis:CheckCommentLikeOrHateIfExistUser: SIsMember")
 }
 
-func AddCommentLikeOrHateUser(commentID, userID int64, like bool) error {
-	key := getCommentLikeOrHateSetKey(commentID, like)
+func AddCommentLikeOrHateUser(commentID, userID, objID int64, objType int8, like bool) error {
+	key := getCommentLikeOrHateSetKey(commentID, objID, objType, like)
 
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
@@ -141,8 +141,8 @@ func AddCommentLikeOrHateUser(commentID, userID int64, like bool) error {
 	return errors.Wrap(cmd.Err(), "redis:AddCommentLikeOrHateUser: SAdd")
 }
 
-func RemCommentLikeOrHateUser(commentID int64, userID int64, like bool) error {
-	key := getCommentLikeOrHateSetKey(commentID, like)
+func RemCommentLikeOrHateUser(commentID, userID, objID int64, objType int8, like bool) error {
+	key := getCommentLikeOrHateSetKey(commentID, objID, objType, like)
 
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
@@ -151,38 +151,39 @@ func RemCommentLikeOrHateUser(commentID int64, userID int64, like bool) error {
 	return errors.Wrap(cmd.Err(), "redis:RemCommentLikeOrHateUser: SRem")
 }
 
-func DelCommentLikeOrHateUserByCommentIDs(commentIDs []int64, like bool) error {
+// 批量删除指定主题下的评论
+func DelCommentLikeOrHateUserByCommentIDs(commentIDs []int64, objID int64, objType int8, like bool) error {
 	keys := make([]string, len(commentIDs))
 	for i := 0; i < len(keys); i++ {
-		keys[i] = getCommentLikeOrHateSetKey(commentIDs[i], like)
+		keys[i] = getCommentLikeOrHateSetKey(commentIDs[i], objID, objType, like)
 	}
 
 	return DelKeys(keys)
 }
 
-/* bluebell:comment:rem:cid_uid */
-func AddCommentRemCidUid(CidUid string) error {
+/* bluebell:comment:rem:cid */
+func AddCommentRemCid(commentID int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
-	cmd := rdb.SAdd(ctx, KeyCommentRemCidUidSet, CidUid)
-	return errors.Wrap(cmd.Err(), "redis:AddCommentRemCidUid: SAdd")
+	cmd := rdb.SAdd(ctx, KeyCommentRemCidSet, commentID)
+	return errors.Wrap(cmd.Err(), "redis:AddCommentRemCid: SAdd")
 }
 
-func RemCommentRemCidUid(CidUid string) error {
+func RemCommentRemCid(commentID int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
-	cmd := rdb.SRem(ctx, KeyCommentRemCidUidSet, CidUid)
-	return errors.Wrap(cmd.Err(), "redis:RemCommentRemCidUid: SRem")
+	cmd := rdb.SRem(ctx, KeyCommentRemCidSet, commentID)
+	return errors.Wrap(cmd.Err(), "redis:RemCommentRemCid: SRem")
 }
 
-func CheckCommentRemCidUidIfExistCidUid(CidUid string) (bool, error) {
+func CheckCommentRemCidIfExistCid(commentID int64) (bool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
-	cmd := rdb.SIsMember(ctx, KeyCommentRemCidUidSet, CidUid)
-	return cmd.Val(), errors.Wrap(cmd.Err(), "redis:CheckCommentRemCidUidIfExistCidUid: SIsMember")
+	cmd := rdb.SIsMember(ctx, KeyCommentRemCidSet, commentID)
+	return cmd.Val(), errors.Wrap(cmd.Err(), "redis:CheckCommentRemCidIfExistCid: SIsMember")
 }
 
 /* bluebell:comment:like: */
@@ -247,12 +248,12 @@ func GetCommentLikeOrHateCountByKeys(keys []string) ([]int, error) {
 	return counts, nil
 }
 
-func getCommentLikeOrHateSetKey(commentID int64, like bool) string {
+func getCommentLikeOrHateSetKey(commentID, objID int64, objType int8, like bool) string {
 	pf := KeyCommentLikeSetPF
 	if !like {
 		pf = KeyCommentHateSetPF
 	}
-	return pf + strconv.FormatInt(commentID, 10)
+	return fmt.Sprintf("%s%d_%d_%d", pf, commentID, objID, objType)
 }
 
 func getCommentLikeOrHateStringKey(commentID int64, like bool) string {

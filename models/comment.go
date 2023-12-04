@@ -38,18 +38,24 @@ type CommentContent struct {
 }
 
 // 记录一个 comment 有哪些用户点过赞
-type CommentLikeUser struct {
-	ID        int64  `gorm:"primaryKey" json:"id"`
-	CidUid    string `gorm:"column:cid_uid;unique;uniqueIndex" json:"cid_uid"`
-	CreatedAt Time   `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt Time   `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"update_at"`
+type CommentUserLikeMapping struct {
+	ID        int64 `gorm:"primaryKey" json:"id"`
+	CommentID int64 `json:"comment_id"`
+	UserID    int64 `json:"user_id"`
+	ObjID     int64 `json:"obj_id"`
+	ObjType   int8  `json:"obj_type"`
+	CreatedAt Time  `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt Time  `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"update_at"`
 }
 
-type CommentHateUser struct {
-	ID        int64  `gorm:"primaryKey" json:"id"`
-	CidUid    string `gorm:"column:cid_uid;unique;uniqueIndex" json:"cid_uid"`
-	CreatedAt Time   `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"created_at"`
-	UpdatedAt Time   `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"update_at"`
+type CommentUserHateMapping struct {
+	ID        int64 `gorm:"primaryKey" json:"id"`
+	CommentID int64 `json:"comment_id"`
+	UserID    int64 `json:"user_id"`
+	ObjID     int64 `json:"obj_id"`
+	ObjType   int8  `json:"obj_type"`
+	CreatedAt Time  `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"created_at"`
+	UpdatedAt Time  `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"update_at"`
 }
 
 type CommentDTO struct {
