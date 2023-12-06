@@ -119,7 +119,7 @@ func PostDetailHandler(ctx *gin.Context) {
 	// 合并一下，方便看
 	common.ResponseSuccess(ctx, &common.ResponsePostDetail{
 		AuthorInfo: struct {
-			AuthorID   int64  "json:\"author_id\""
+			AuthorID   int64  "json:\"author_id,string\""
 			AuthorName string "json:\"author_name\""
 		}{
 			AuthorID:   post.UserID,
@@ -137,7 +137,7 @@ func PostDetailHandler(ctx *gin.Context) {
 			CreatedAt:     post.CommunityCreatedAt,
 		},
 		PostInfo: struct {
-			PostID    int64       "json:\"post_id\""
+			PostID    int64       "json:\"post_id,string\""
 			Title     string      "json:\"title\""
 			Content   string      "json:\"content\""
 			CreatedAt models.Time "json:\"created_at\""
@@ -229,7 +229,7 @@ func PostListHandler(ctx *gin.Context) {
 
 	if err != nil {
 		if errors.Is(err, bluebell.ErrInvalidParam) {
-			common.ResponseError(ctx, common.CodeInvalidParam)	
+			common.ResponseError(ctx, common.CodeInvalidParam)
 		} else {
 			common.ResponseError(ctx, common.CodeInternalErr)
 			logger.ErrorWithStack(err)
@@ -267,7 +267,7 @@ func PostSearchHandler2(ctx *gin.Context) {
 		return
 	}
 	// 拒绝服务
-	if params.PageNum * params.PageSize >= 1e4 {
+	if params.PageNum*params.PageSize >= 1e4 {
 		common.ResponseErrorWithMsg(ctx, common.CodeInvalidParam, "Too much data requested")
 		return
 	}

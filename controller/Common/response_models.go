@@ -9,14 +9,14 @@ type ResponseTokens struct {
 
 type ResponseUserLogin struct {
 	UserName     string `json:"user_name"`
-	UserID       int64  `json:"user_id"`
+	UserID       int64  `json:"user_id,string"`
 	AccessToken  string `json:"access_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
 }
 
 type ResponsePostDetail struct {
 	AuthorInfo struct {
-		AuthorID   int64  `json:"author_id"`
+		AuthorID   int64  `json:"author_id,string"`
 		AuthorName string `json:"author_name"`
 	} `json:"author_info"`
 	CommunityInfo struct {
@@ -26,7 +26,7 @@ type ResponsePostDetail struct {
 		CreatedAt     models.Time `json:"created_at"`
 	} `json:"community_info"`
 	PostInfo struct {
-		PostID    int64       `json:"post_id"`
+		PostID    int64       `json:"post_id,string"`
 		Title     string      `json:"title"`
 		Content   string      `json:"content"`
 		CreatedAt models.Time `json:"created_at"`

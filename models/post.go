@@ -20,9 +20,9 @@ type PostDoc struct {
 }
 
 type PostDTO struct {
-	UserID      int64 `json:"author_id"`
+	UserID      int64 `json:"author_id,string"`
 	CommunityID int64 `json:"community_id"`
-	PostID      int64 `json:"post_id"`
+	PostID      int64 `json:"post_id,string"`
 
 	CommunityName string `json:"community_name" binding:"required"`
 	UserName      string `json:"author_name"`

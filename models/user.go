@@ -12,7 +12,7 @@ type User struct {
 }
 
 type UserDTO struct {
-	UserID   int64  `json:"user_id"`
+	UserID   int64  `json:"user_id,string"`
 	UserName string `json:"username"`
 	Email    string `json:"email"`
 	Gender   int8   `json:"gender"`

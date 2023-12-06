@@ -59,12 +59,12 @@ type CommentUserHateMapping struct {
 }
 
 type CommentDTO struct {
-	CommentID int64 `json:"comment_id"`
-	ObjID     int64 `json:"obj_id"`
+	CommentID int64 `json:"comment_id,string"`
+	ObjID     int64 `json:"obj_id,string"`
 	Type      int8  `json:"type"`
-	Root      int64 `json:"root"`
-	Parent    int64 `json:"parent"`
-	UserID    int64 `json:"user_id"`
+	Root      int64 `json:"root,string"`
+	Parent    int64 `json:"parent,string"`
+	UserID    int64 `json:"user_id,string"`
 	Floor     int   `json:"floor"`
 	Like      int   `json:"like"`
 	Content   struct {

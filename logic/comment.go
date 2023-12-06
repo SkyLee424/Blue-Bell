@@ -10,6 +10,7 @@ import (
 	"bluebell/models"
 	"fmt"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/pkg/errors"
@@ -423,7 +424,7 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 	// return errors.Wrap(bluebell.ErrInvalidParam, "logic:LikeOrHateForComment: invalid opinion")
 }
 
-func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserLikeOrHateList) ([]int64, error) {
+func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserLikeOrHateList) ([]string, error) {
 	list, rebuilt, err := rebuild.RebuildCommentUserLikeOrHateMapping(userID, params.ObjID, params.ObjType, params.Like)
 	if err != nil {
 		logger.Warnf("logic:GetCommentUserLikeOrHateList: RebuildCommentUserLikeOrHateMapping failed, reason: %s, reading db...", err.Error()) // 重建失败，读 db
@@ -441,7 +442,11 @@ func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserL
 			}
 		}
 	}
-	return list, nil
+	listStr := make([]string, len(list))
+	for i := 0; i < len(list); i++ {
+		listStr[i] = strconv.FormatInt(list[i], 10)
+	}
+	return listStr, nil
 }
 
 func getCommentIDs(objType int8, objID int64) ([]int64, error) {

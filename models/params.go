@@ -24,7 +24,7 @@ type ParamCreatePost struct {
 }
 
 type ParamVote struct {
-	PostID    int64 `json:"post_id" binding:"required"`
+	PostID    int64 `json:"post_id,string" binding:"required"`
 	Direction int8  `json:"direction" binding:"oneof=1 0 -1"`
 }
 
@@ -44,11 +44,11 @@ type ParamPostListByKeyword struct {
 
 /* Comment */
 type ParamCommentCreate struct {
-	ObjID   int64  `json:"obj_id" binding:"required"`
+	ObjID   int64  `json:"obj_id,string" binding:"required"`
 	ObjType int8   `json:"obj_type" binding:"required"`
 	Message string `json:"message" binding:"required,min=1,max=8192"`
-	Root    int64  `json:"root"`
-	Parent  int64  `json:"parent"`
+	Root    int64  `json:"root,string"`
+	Parent  int64  `json:"parent,string"`
 }
 
 type ParamCommentList struct {
