@@ -33,6 +33,16 @@ func CreateCommentLikeOrHateUser(tx *gorm.DB, commentID, userID, objID int64, ob
 	useDB := getUseDB(tx)
 	var res *gorm.DB
 
+	// 在添加之前，检查有没有重复项（cid、uid、oid、otype 均相同）
+	exist, err := CheckCidUidIfExist(useDB, commentID, userID, like)
+	if err != nil {
+		return errors.Wrap(err, "mysql:CreateCommentLikeOrHateUser: CheckCidUidIfExist")
+	}
+	if exist {
+		return nil
+	}
+
+	// 没有重复项，可以添加
 	if like {
 		res = useDB.Create(&models.CommentUserLikeMapping{
 			CommentID: commentID,
