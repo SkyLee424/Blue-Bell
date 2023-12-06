@@ -76,3 +76,9 @@ type ParamCommentHate struct {
 	ObjID     int64 `form:"obj_id" binding:"required"`
 	ObjType   int8  `form:"obj_type" binding:"required"`
 }
+
+type ParamCommentUserLikeOrHateList struct {
+	ObjID   int64 `form:"obj_id" binding:"required"`
+	ObjType int8  `form:"obj_type" binding:"required"`
+	Like    bool  `form:"like" binding:"required"`
+}

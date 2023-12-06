@@ -387,6 +387,11 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentRemCidUid")
 		}
 
+		// 还要删除缓存 bluebell:comment:userlikeids:
+		if err := redis.RemCommentUserLikeOrHateMapping(userID, commentID, objID, objType, like); err != nil {
+			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentLikeOrHateUser")
+		}
+
 		return errors.Wrap(redis.IncrCommentLikeOrHateCount(commentID, -1, like), "logic:LikeOrHateForComment: IncrCommentIndexCountField")
 
 	} else { // 点赞（踩）
@@ -399,6 +404,18 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentLikeOrHateUser")
 		}
 
+		// 写缓存 bluebell:comment:userlike(hate)ids:
+		// 尝试重建，由 rebuild 判断需不需要重建
+		_, _, err = rebuild.RebuildCommentUserLikeOrHateMapping(userID, objID, objType, like)
+		if err != nil {
+			return errors.Wrap(err, "logic:LikeOrHateForComment: RebuildCommentUserLikeOrHateMapping")
+		}
+
+		err = redis.AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID, objType, like, []int64{commentID})
+		if err != nil {
+			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentUserLikeOrHateMapping")
+		}
+
 		return errors.Wrap(redis.IncrCommentLikeOrHateCount(commentID, 1, like), "logic:LikeOrHateForComment: IncrCommentIndexCountField")
 	}
 
@@ -407,10 +424,22 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 }
 
 func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserLikeOrHateList) ([]int64, error) {
-	// demo
-	list, err := mysql.SelectCommentUserLikeOrHateList(nil, userID, params.ObjID, params.ObjType, params.Like)
+	list, rebuilt, err := rebuild.RebuildCommentUserLikeOrHateMapping(userID, params.ObjID, params.ObjType, params.Like)
 	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentUserLikeOrHateList: SelectCommentUserLikeOrHateList")
+		logger.Warnf("logic:GetCommentUserLikeOrHateList: RebuildCommentUserLikeOrHateMapping failed, reason: %s, reading db...", err.Error()) // 重建失败，读 db
+		list, err = mysql.SelectCommentUserLikeOrHateList(nil, userID, params.ObjID, params.ObjType, params.Like)
+		if err != nil { // 读 db 失败，请求失败
+			return nil, errors.Wrap(err, "logic:GetCommentUserLikeOrHateList: SelectCommentUserLikeOrHateList")
+		}
+	} else if !rebuilt { // 没有重建，读 cache
+		list, err = redis.GetCommentUserLikeOrHateList(userID, params.ObjID, params.ObjType, params.Like)
+		if err != nil { // 读 cache 失败，尝试读 db
+			logger.Warnf("logic:GetCommentUserLikeOrHateList: RebuildCommentUserLikeOrHateMapping failed, reason: %s, reading db...", err.Error()) // 重建失败，读 db
+			list, err = mysql.SelectCommentUserLikeOrHateList(nil, userID, params.ObjID, params.ObjType, params.Like)
+			if err != nil { // 读 db 失败，请求失败
+				return nil, errors.Wrap(err, "logic:GetCommentUserLikeOrHateList: SelectCommentUserLikeOrHateList")
+			}
+		}
 	}
 	return list, nil
 }

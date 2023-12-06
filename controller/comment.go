@@ -156,15 +156,39 @@ func CommentHateHandler(ctx *gin.Context) {
 	commentLikeHateHelper(ctx, params.CommentID, params.ObjID, params.ObjType, false)
 }
 
+// CommentUserLikeOrHateListHandler 用户评论列表接口
+//
+//	@Summary		用户评论列表接口
+//	@Description	根据 user_id、obj_id、obj_type 获取指定主题下，某个用户点过赞的评论列表
+//	@Tags			评论相关接口
+//	@Accept			application/json
+//	@Produce		application/json
+//	@Param			Authorization	header	string									false	"Bearer 用户令牌"
+//	@Param			object			query	models.ParamCommentUserLikeOrHateList	false	"查询参数"
+//	@Security		ApiKeyAuth
+//	@Success		200	{object}	common.Response{data=[]int64}
+//	@Router			/comment/likeOrHateList [get]
+func CommentUserLikeOrHateListHandler(ctx *gin.Context) {
+	userID := ctx.GetInt64("user_id")
+	params := &models.ParamCommentUserLikeOrHateList{}
+	if err := ctx.ShouldBindQuery(&params); err != nil {
+		common.ResponseErrorWithMsg(ctx, common.CodeInvalidParam, utils.ParseToValidationError(err))
+		return
+	}
+	list, err := logic.GetCommentUserLikeOrHateList(userID, params)
+	if err != nil {
+		common.ResponseError(ctx, common.CodeInternalErr)
+		logger.ErrorWithStack(err)
+		return
+	}
+	common.ResponseSuccess(ctx, list)
+}
+
 func commentLikeHateHelper(ctx *gin.Context, commentID, objID int64, objType int8, like bool) {
 	userID := ctx.GetInt64("user_id")
 	if err := logic.LikeOrHateForComment(userID, commentID, objID, objType, like); err != nil {
-		// if errors.Is(err, bluebell.ErrInvalidParam) {
-		// 	common.ResponseError(ctx, common.CodeInvalidParam)
-		// } else {
 		common.ResponseError(ctx, common.CodeInternalErr)
 		logger.ErrorWithStack(err)
-		// }
 		return
 	}
 	common.ResponseSuccess(ctx, nil)

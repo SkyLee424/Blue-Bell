@@ -248,6 +248,60 @@ func GetCommentLikeOrHateCountByKeys(keys []string) ([]int, error) {
 	return counts, nil
 }
 
+/* bluebell:comment:userlikeids: */
+func AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID int64, objType int8, like bool, commentIDs []int64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	key := getCommentUserLikeOrHateMappingKey(userID, objID, objType, like)
+
+	// cmd := rdb.SAdd(ctx, key, commentIDs)
+	pipe := rdb.Pipeline()
+	for _, commentID := range commentIDs {
+		pipe.SAdd(ctx, key, commentID)
+	}
+	_, err := pipe.Exec(ctx)
+	if err != nil {
+		return errors.Wrap(err, "redis:AddCommentUserLikeOrHateMappingByCommentIDs: SAdd")
+	}
+	expireTime := CommentUserLikeExpireTime
+	if !like {
+		expireTime = CommentUserHateExpireTime
+	}
+	cmd := rdb.Expire(ctx, key, expireTime)
+	return errors.Wrap(cmd.Err(), "redis:AddCommentUserLikeOrHateMappingByCommentIDs: Expire")
+}
+
+func GetCommentUserLikeOrHateList(userID, objID int64, objType int8, like bool) ([]int64, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	key := getCommentUserLikeOrHateMappingKey(userID, objID, objType, like)
+
+	cmd := rdb.SMembers(ctx, key)
+	if cmd.Err() != nil {
+		return nil, errors.Wrap(cmd.Err(), "redis:GetCommentUserLikeOrHateList: SMembers")
+	}
+
+	list := make([]int64, 0, len(cmd.Val()))
+	for _, commentIDStr := range cmd.Val() {
+		commentID, _ := strconv.ParseInt(commentIDStr, 10, 64)
+		list = append(list, commentID)
+	}
+
+	return list, nil
+}
+
+func RemCommentUserLikeOrHateMapping(userID, commentID, objID int64, objType int8, like bool) error {
+	key := getCommentUserLikeOrHateMappingKey(userID, objID, objType, like)
+
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.SRem(ctx, key, commentID)
+	return errors.Wrap(cmd.Err(), "redis:RemCommentUserLikeOrHateMapping: SRem")
+}
+
 func getCommentLikeOrHateSetKey(commentID, objID int64, objType int8, like bool) string {
 	pf := KeyCommentLikeSetPF
 	if !like {
@@ -262,4 +316,12 @@ func getCommentLikeOrHateStringKey(commentID int64, like bool) string {
 		pf = KeyCommentHateStringPF
 	}
 	return fmt.Sprintf("%s%v", pf, commentID)
+}
+
+func getCommentUserLikeOrHateMappingKey(userID, objID int64, objType int8, like bool) string {
+	pf := KeyCommentUserLikeIDsPF
+	if !like {
+		pf = KeyCommentUserHateIDsPF
+	}
+	return fmt.Sprintf("%s%d_%d_%d", pf, userID, objID, objType)
 }

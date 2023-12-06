@@ -136,3 +136,12 @@ func DelKeys(keys []string) error {
 	cmd := rdb.Del(ctx, keys...)
 	return errors.Wrap(cmd.Err(), "redis:DelKeys: Del")
 }
+
+func RestoreKeyExpireTime(key string, ttl time.Duration) error {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.Expire(ctx, key, ttl)
+
+	return errors.Wrap(cmd.Err(), "redis:RestoreKeyExpireTime: Expire")
+}

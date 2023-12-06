@@ -64,6 +64,7 @@ func Init() {
 	commentGrp.DELETE("/remove", controller.CommentRemoveHandler)
 	commentGrp.POST("/like", controller.CommentLikeHandler)
 	commentGrp.POST("/hate", controller.CommentHateHandler)
+	commentGrp.GET("/likeOrHateList", controller.CommentUserLikeOrHateListHandler)
 	
 	v1.GET("/comment/list", controller.CommentListHandler)
 

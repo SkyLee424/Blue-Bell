@@ -101,3 +101,40 @@ func RebuildCommentContent(commentIDs []int64) error {
 	logger.Infof("rebuild:RebuildCommentContent: Rebuild %d data from mysql to redis", len(missCommentIDs))
 	return nil
 }
+
+func RebuildCommentUserLikeOrHateMapping(userID, objID int64, objType int8, like bool) ([]int64, bool, error) {
+	key := redis.KeyCommentUserLikeIDsPF
+	if !like {
+		key = redis.KeyCommentUserHateIDsPF
+	}
+	key = fmt.Sprintf("%s%d_%d_%d", key, userID, objID, objType)
+	exist, err := redis.Exists(key)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentUserLikeOrHateMapping: Exists")
+	}
+	if exist { // 不需要重建
+		// 重置 TTL
+		var err error
+		if like {
+			err = redis.RestoreKeyExpireTime(key, redis.CommentUserLikeExpireTime)
+		} else {
+			err = redis.RestoreKeyExpireTime(key, redis.CommentUserHateExpireTime)
+		}
+		if err != nil {
+			logger.Warnf("rebuild:RebuildCommentUserLikeOrHateMapping: RestoreKeyExpireTime failed")
+		}
+		return nil, false, nil
+	}
+
+	list, err := mysql.SelectCommentUserLikeOrHateList(nil, userID, objID, objType, like)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentUserLikeOrHateMapping: SelectCommentUserLikeOrHateList")
+	}
+
+	err = redis.AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID, objType, like, list)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentUserLikeOrHateMapping: AddCommentUserLikeOrHateMappingByCommentIDs")
+	}
+	logger.Infof("rebuild:RebuildCommentUserLikeOrHateMapping: Rebuild %d data from mysql to redis", len(list))
+	return list, true, nil
+}
