@@ -6,7 +6,6 @@ import (
 	"bluebell/dao/redis"
 	"bluebell/internal/utils"
 	"bluebell/logger"
-	"bluebell/models"
 	"bluebell/router"
 	"bluebell/settings"
 	"bluebell/workers"
@@ -33,15 +32,6 @@ func init() {
 	utils.InitToken()
 
 	mysql.InitMySQL()
-	mysql.GetDB().AutoMigrate(&models.User{})
-	mysql.GetDB().AutoMigrate(&models.Community{})
-	mysql.GetDB().AutoMigrate(&models.Post{})
-	mysql.GetDB().AutoMigrate(&models.ExpiredPostScore{})
-	mysql.GetDB().AutoMigrate(&models.CommentSubject{})
-	mysql.GetDB().AutoMigrate(&models.CommentIndex{})
-	mysql.GetDB().AutoMigrate(&models.CommentContent{})
-	mysql.GetDB().AutoMigrate(&models.CommentLikeUser{})
-	mysql.GetDB().AutoMigrate(&models.CommentHateUser{})
 	logger.Infof("Initializing MySQL successfully")
 
 	redis.InitRedis()
