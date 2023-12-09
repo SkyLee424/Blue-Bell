@@ -5,7 +5,9 @@ import "sync"
 var wg sync.WaitGroup
 
 func InitWorkers()  {
-	PersistenceScore(&wg)
+	PersistencePostScore(&wg)
+	RefreshHotPost(&wg)
+	
 	PersistenceCommentCount(&wg, true)
 	PersistenceCommentCount(&wg, false)
 	PersistenceCommentCidUid(&wg, true)

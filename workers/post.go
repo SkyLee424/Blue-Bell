@@ -1,6 +1,7 @@
 package workers
 
 import (
+	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
 	"bluebell/dao/redis"
 	"bluebell/logger"
@@ -13,7 +14,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-func PersistenceScore(wg *sync.WaitGroup) {
+func PersistencePostScore(wg *sync.WaitGroup) {
 	// 每 waitTime 检查一次，业务体量越小，检查时间可以越长
 	waitTime := time.Second * time.Duration(viper.GetInt64("service.post.persistence_interval"))
 
@@ -41,12 +42,16 @@ func PersistenceScore(wg *sync.WaitGroup) {
 			}
 
 			// 从 redis 中获取 voteNums
-			voteNums, err := redis.GetPostVoteNums(postIDs)
+			upVoteNums, err := redis.GetPostUpVoteNums(postIDs)
+			if !checkError(err, &waitTime, wg) {
+				continue
+			}
+			downVoteNums, err := redis.GetPostUpVoteNums(postIDs)
 			if !checkError(err, &waitTime, wg) {
 				continue
 			}
 
-			if len(postIDs) != len(postScores) || len(postScores) != len(voteNums) {
+			if len(postIDs) != len(postScores) || len(postScores) != len(upVoteNums) || len(upVoteNums) != len(downVoteNums) {
 				checkError(errors.New("Unexpected length in persistence post scores"), &waitTime, wg)
 				continue
 			}
@@ -58,7 +63,7 @@ func PersistenceScore(wg *sync.WaitGroup) {
 				expiredPosts = append(expiredPosts, models.ExpiredPostScore{
 					PostID:      post_id,
 					PostScore:   postScores[i],
-					PostVoteNum: voteNums[i],
+					PostVoteNum: upVoteNums[i] - downVoteNums[i],
 				})
 			}
 
@@ -109,7 +114,28 @@ func PersistenceScore(wg *sync.WaitGroup) {
 	// 修改后，也要同步修改 logic 中的 post.go 的 GetPostDetailByID
 }
 
-// 帖子的业务逻辑：
-// 在过期前，可以正常的投票，也可以在主页面看到该帖子的信息
-// 在过期后，不允许投票，在主页也不可以看到帖子的信息
-// 后续前端添加一个根据 ID 搜索的逻辑，通过这个方式，允许获得过期帖子的信息
+func RefreshHotPost(wg *sync.WaitGroup)  {
+	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_post.refresh_time"))
+	size := viper.GetInt64("service.hot_post.size")
+
+	go func() {
+		for {
+			wg.Add(1)
+			
+			postID, _, err := redis.GetPostIDs(1, size, "score")
+			if !checkError(err, &refreshTime, wg)  {
+				continue
+			}
+
+			hotPosts, err := mysql.SelectPostListByPostIDs(postID)
+			if !checkError(err, &refreshTime, wg)  {
+				continue
+			}
+
+			localcache.SetHotPostDTO(hotPosts)
+			logger.Infof("Refreshed hot post list")
+			wg.Done()
+			time.Sleep(refreshTime)
+		}
+	}()
+}

@@ -290,3 +290,27 @@ func PostSearchHandler2(ctx *gin.Context) {
 		Posts: postList,
 	})
 }
+
+// PostHotController 火热帖子列表接口
+//
+//	@Summary		火热帖子列表接口
+//	@Description	获取火热帖子列表
+//	@Tags			帖子相关接口
+//	@Accept			application/json
+//	@Produce		application/json
+//	@Security		ApiKeyAuth
+//	@Success		200	{object}	common.Response{data=[]models.PostListDTO}
+//	@Router			/post/hot [get]
+func PostHotController(ctx *gin.Context)  {
+	list, err := logic.GetHotPostList()
+	if err != nil {
+		common.ResponseError(ctx, common.CodeInternalErr)
+		logger.ErrorWithStack(err)
+		return
+	}
+
+	common.ResponseSuccess(ctx, &models.PostListDTO{
+		Total: len(list),
+		Posts: list,
+	})
+}

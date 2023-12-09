@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"bluebell/algorithm"
 	"context"
 	"strconv"
 	"time"
@@ -32,7 +33,7 @@ func SetPost(postID, communityID int64) error {
 	// 缓存 KeyPostScoreZset（curTimeStamp）
 	pipeline.ZAdd(ctx, KeyPostScoreZset, redis.Z{
 		Member: postID,
-		Score:  float64(curTimeStamp),
+		Score:  algorithm.GetPostScoreByReddit(time.Now().Unix(), 1), // 使用 reddit 投票算法
 	})
 
 	// 缓存 KeyPost
@@ -70,12 +71,12 @@ func GetUserPostDirection(post_id, user_id int64) (int8, error) {
 	return int8(cmd.Val()), nil
 }
 
-func SetPostScore(post_id, score int64) error {
+func SetPostScore(post_id int64, score float64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 	cmd := rdb.ZAdd(ctx, KeyPostScoreZset, redis.Z{
 		Member: post_id,
-		Score:  float64(score),
+		Score:  score,
 	})
 	if cmd.Err() != nil {
 		return errors.Wrap(cmd.Err(), "set post score")
@@ -155,13 +156,21 @@ func GetPostVoteNum(postID string) (int64, error) {
 	return cmd.Val(), nil
 }
 
-func GetPostVoteNums(postIDs []string) ([]int64, error) {
+func GetPostUpVoteNums(postIDs []string) ([]int64, error) {
+	return getPostVoteNumHelper(postIDs, "1")
+}
+
+func GetPostDownVoteNums(postIDs []string) ([]int64, error) {
+	return getPostVoteNumHelper(postIDs, "-1")
+}
+
+func getPostVoteNumHelper(postIDs []string, opinion string) ([]int64, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
 	pipe := rdb.Pipeline()
 	for _, postID := range postIDs {
-		pipe.ZCount(ctx, KeyPostVotedZsetPF+postID, "1", "1")
+		pipe.ZCount(ctx, KeyPostVotedZsetPF+postID, opinion, opinion)
 	}
 	cmds, err := pipe.Exec(ctx)
 	if err != nil {

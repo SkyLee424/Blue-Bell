@@ -1,12 +1,16 @@
 package logic
 
 import (
+	"bluebell/algorithm"
 	"bluebell/dao/elasticsearch"
+	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
 	"bluebell/dao/redis"
 	bluebell "bluebell/errors"
 	"bluebell/internal/utils"
+	"bluebell/logger"
 	"bluebell/models"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -90,32 +94,43 @@ func VoteForPost(user_id, post_id int64, direction int8) error {
 		return bluebell.ErrVoteTimeExpire
 	}
 
-	// 获取帖子原来分数
-	score, err := redis.GetPostScore(post_id)
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return err
-	}
-
-	// 获取用户原来的投票选项
-	oldDirection, err := redis.GetUserPostDirection(post_id, user_id)
-	if err != nil && !errors.Is(err, redis.Nil) {
-		return err
-	}
-	// 不需要修改
-	if oldDirection == direction {
-		return nil
-	}
-
-	// 计算修改后的分数
-	newScore := int64(direction-oldDirection)*432 + int64(score)
-
-	// 保存分数
-	if err := redis.SetPostScore(post_id, newScore); err != nil {
-		return err
-	}
-
 	// 保存用户操作
-	return redis.SetUserPostDirection(post_id, user_id, direction)
+	if err := redis.SetUserPostDirection(post_id, user_id, direction); err != nil {
+		return errors.Wrap(err, "logic:VoteForPost: SetUserPostDirection")
+	}
+
+	postIDStr := fmt.Sprintf("%d", post_id)
+	upVoteNum, err := redis.GetPostUpVoteNums([]string{postIDStr})
+	if err != nil {
+		return errors.Wrap(err, "logic:VoteForPost: GetPostUpVoteNums")
+	}
+	downVoteNum, err := redis.GetPostDownVoteNums([]string{postIDStr})
+	if err != nil {
+		return errors.Wrap(err, "logic:VoteForPost: GetPostUpVoteNums")
+	}
+	logger.Debugf("up: %v, down: %v", upVoteNum[0], downVoteNum[0])
+
+	// 更新帖子的分数
+	newScore := algorithm.GetPostScoreByReddit(int64(publishTime), upVoteNum[0] - downVoteNum[0])
+	return errors.Wrap(redis.SetPostScore(post_id, newScore), "logic:VoteForPost: SetPostScore")
+
+	// // 获取帖子原来分数
+	// score, err := redis.GetPostScore(post_id)
+	// if err != nil && !errors.Is(err, redis.Nil) {
+	// 	return err
+	// }
+
+	
+
+	// // 计算修改后的分数
+	// newScore := int64(direction-oldDirection)*432 + int64(score)
+
+	// // 保存分数
+	// if err := redis.SetPostScore(post_id, newScore); err != nil {
+	// 	return err
+	// }
+
+	
 }
 
 func GetAllPostList(params *models.ParamPostList) ([]*models.PostDTO, int, error) {
@@ -184,7 +199,7 @@ func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
 	}
 
 	// 在 redis 中查询每个 post 的投票数（如果帖子过期，查询仍会成功，且 votenum 为 0）
-	voteNumsFromRedis, err := redis.GetPostVoteNums(postIDs)
+	voteNumsFromRedis, err := redis.GetPostUpVoteNums(postIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -207,4 +222,9 @@ func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
 
 	// 返回
 	return list, nil
+}
+
+func GetHotPostList() ([]*models.PostDTO, error) {
+	postList, err := localcache.GetHotPostDTOList()
+	return postList, errors.Wrap(err, "logic:GetHotPostList: GetHotPostDTOList")
 }
