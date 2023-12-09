@@ -2,6 +2,7 @@ package elasticsearch
 
 import (
 	bluebell "bluebell/errors"
+	"bluebell/logger"
 	"bluebell/models"
 	"context"
 	"encoding/json"
@@ -187,7 +188,8 @@ func getPostIDsHelper(query string, pageNum, pageSize int64) ([]string, int, err
 
 	start := (pageNum - 1) * pageSize
 	end := start + pageSize
-	if int(start) >= len(postIDs) { // 错误的分页参数
+	if start != 0 && int(start) >= len(postIDs) { // 错误的分页参数（注意排除搜索结果为空的情况）
+		logger.Debugf("start:%v, end:%v", start, end)
 		return nil, 0, errors.Wrap(bluebell.ErrInvalidParam, "elasticsearch: wrong paging parameters")
 	}
 	if int(end) > len(postIDs) {
