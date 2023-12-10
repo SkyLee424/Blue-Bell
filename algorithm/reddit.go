@@ -1,7 +1,6 @@
 package algorithm
 
 import (
-	"bluebell/logger"
 	"math"
 	"time"
 
@@ -31,6 +30,5 @@ func GetPostScoreByReddit(timestamp, voteDiff int64) float64 {
 	}
 
 	score := math.Log10(z) + float64(y)*float64(t)/45000.0
-	logger.Debugf("z:%v, y:%v, t:%v, score:%v", z, y, t, score)
 	return score
 }
