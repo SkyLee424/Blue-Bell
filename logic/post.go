@@ -9,6 +9,7 @@ import (
 	"bluebell/dao/redis"
 	bluebell "bluebell/errors"
 	"bluebell/internal/utils"
+	"bluebell/logger"
 	"bluebell/models"
 	"bluebell/objects"
 	"fmt"
@@ -45,7 +46,18 @@ func CreatePost(post *models.Post) error {
 func GetPostDetailByID(id int64, needIncrView bool) (detail *models.PostDTO, err error) {
 	postIDStr := strconv.FormatInt(id, 10)
 	if needIncrView {
-		redis.ZSetIncrBy(redis.KeyPostViewsZset, postIDStr, 1) // 增加一次访问量
+		newMember, err := redis.ZSetIncrBy(redis.KeyPostViewsZset, postIDStr, 1) // 增加一次访问量
+		if err != nil {
+			logger.Warnf("logic:GetPostDetailByID: ZSetIncrBy failed(incr post view)")
+		} else if newMember == true { // 如果是新创建的 member，在 redis 中记录创建时间，用于统计一个时间段的 view
+			member := fmt.Sprintf("%v_%v", objects.ObjPost, postIDStr)
+			if err := redis.ZSetAdd(redis.KeyPostViewsZset, member, float64(time.Now().Unix())); err != nil {
+				logger.Warnf("logic:GetPostDetailByID: SetPostViewCreateTime failed")
+				// 应该保证事务一致性原则（回滚 incr 操作）
+				// 这里简单处理，不考虑回滚失败
+				redis.ZSetIncrBy(redis.KeyPostViewsZset, postIDStr, -1)
+			}
+		}
 	}
 
 	cacheKey := fmt.Sprintf("%v_%v", objects.ObjPost, id) // 用于获取 local cache 的 key

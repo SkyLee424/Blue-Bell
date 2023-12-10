@@ -34,6 +34,9 @@ const (
 	KeyCommentUserLikeIDsPF   = "bluebell:comment:userlikeids:" // param uid_oid_otype, member: comment_id
 	KeyCommentUserHateIDsPF   = "bluebell:comment:userhateids:" // param uid_oid_otype, member: comment_id
 	KeyCommentRemCidSet       = "bluebell:comment:rem:cid"      // member: comment_id
+
+	// other
+	KeyViewCreatedTimeZSet = "bluebell:view:create_time" // field: otype_otype, value: created_time(int64)
 )
 
 var Nil = redis.Nil
@@ -147,9 +150,50 @@ func RestoreKeyExpireTime(key string, ttl time.Duration) error {
 	return errors.Wrap(cmd.Err(), "redis:RestoreKeyExpireTime: Expire")
 }
 
-func ZSetIncrBy(key, member string, offset float64) error {
+// bool：是否创建了一个新的 member
+func ZSetIncrBy(key, member string, offset float64) (bool, error) {
+	if offset == 0 {
+		return false, nil
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
-	return errors.Wrap(rdb.ZIncrBy(ctx, key, offset, member).Err(), "redis:IncrBy: IncrBy")
+	cmd := rdb.ZIncrBy(ctx, key, offset, member)
+	if cmd.Err() != nil {
+		return false, errors.Wrap(cmd.Err(), "redis:IncrBy: IncrBy")
+	}
+	return cmd.Val() == offset, nil
+}
+
+func ZSetAdd(key, member string, score float64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.ZAdd(ctx, KeyViewCreatedTimeZSet, redis.Z{
+		Member: member,
+		Score:  score,
+	})
+
+	return errors.Wrap(cmd.Err(), "redis:ZSetAdd: ZAdd")
+}
+
+func GetZSetMembersRangeByScore(key, min, max string) ([]string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.ZRangeByScore(ctx, key,&redis.ZRangeBy{
+		Min: min,
+		Max: max,
+	})
+
+	return cmd.Val(), errors.Wrap(cmd.Err(), "redis:GetZSetMembersRangeByScore: ZRangeByScore")
+}
+
+func ZSetRem(key string, member any) error {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.ZRem(ctx, key, member)
+	
+	return errors.Wrap(cmd.Err(), "redis:ZSetRem: ZRem")
 }

@@ -16,6 +16,8 @@ func InitWorkers()  {
 	RemoveCommentCidUidFromDB(&wg)
 	RemoveCommentIndexFromRedis(&wg)
 	RemoveCommentContentFromRedis(&wg)
+
+	RemoveExpiredObjectView(&wg)
 }
 
 func Wait()  {
