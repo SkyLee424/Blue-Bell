@@ -2,6 +2,7 @@ package main
 
 import (
 	"bluebell/dao/elasticsearch"
+	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
 	"bluebell/dao/redis"
 	"bluebell/internal/utils"
@@ -39,6 +40,9 @@ func init() {
 
 	elasticsearch.Init()
 	logger.Infof("Initializing Elasticsearch successfully")
+
+	localcache.InitLocalCache()
+	logger.Infof("Initializing Localcache successfully")
 
 	router.Init()
 	logger.Infof("Initializing router successfully")

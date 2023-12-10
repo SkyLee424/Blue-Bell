@@ -22,6 +22,7 @@ const (
 	KeyPostCommunityZsetPF = "bluebell:post:community:" // member: post_id, score: 0
 	KeyPostVotedZsetPF     = "bluebell:post:voted:"     // parma: post_id, member: user_id, score: opinion
 	KeyCachePF             = "bluebell:cache:"
+	KeyPostViewsZset       = "bluebell:post:views" 		// member: post_id, score: views
 
 	// comment
 	KeyCommentIndexZSetPF     = "bluebell:comment:index:"       // param:otype_oid, member:comment_id, score:floor
@@ -144,4 +145,11 @@ func RestoreKeyExpireTime(key string, ttl time.Duration) error {
 	cmd := rdb.Expire(ctx, key, ttl)
 
 	return errors.Wrap(cmd.Err(), "redis:RestoreKeyExpireTime: Expire")
+}
+
+func ZSetIncrBy(key, member string, offset float64) error {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	return errors.Wrap(rdb.ZIncrBy(ctx, key, offset, member).Err(), "redis:IncrBy: IncrBy")
 }

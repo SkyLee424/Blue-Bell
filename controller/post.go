@@ -104,7 +104,7 @@ func PostDetailHandler(ctx *gin.Context) {
 		return
 	}
 
-	post, err := logic.GetPostDetailByID(post_id)
+	post, err := logic.GetPostDetailByID(post_id, true)
 	if err != nil {
 		if errors.Is(err, bluebell.ErrNoSuchPost) {
 			common.ResponseError(ctx, common.CodeNoSuchPost)
@@ -301,7 +301,7 @@ func PostSearchHandler2(ctx *gin.Context) {
 //	@Security		ApiKeyAuth
 //	@Success		200	{object}	common.Response{data=[]models.PostListDTO}
 //	@Router			/post/hot [get]
-func PostHotController(ctx *gin.Context)  {
+func PostHotController(ctx *gin.Context) {
 	list, err := logic.GetHotPostList()
 	if err != nil {
 		common.ResponseError(ctx, common.CodeInternalErr)

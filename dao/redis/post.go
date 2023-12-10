@@ -2,6 +2,7 @@ package redis
 
 import (
 	"bluebell/algorithm"
+	bluebell "bluebell/errors"
 	"context"
 	"strconv"
 	"time"
@@ -101,8 +102,12 @@ func GetPostIDs(pageNum, pageSize int64, orderBy string) ([]string, int, error) 
 	var key string
 	if orderBy == "time" {
 		key = KeyPostTimeZset
-	} else {
+	} else if orderBy == "score" {
 		key = KeyPostScoreZset
+	} else if orderBy == "views" {
+		key = KeyPostViewsZset
+	} else {
+		return nil, 0, bluebell.ErrInvalidParam
 	}
 
 	return getPostIDHelper(key, pageNum, pageSize)

@@ -5,11 +5,12 @@ import (
 	"bluebell/dao/elasticsearch"
 	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
+	"bluebell/dao/rebuild"
 	"bluebell/dao/redis"
 	bluebell "bluebell/errors"
 	"bluebell/internal/utils"
-	"bluebell/logger"
 	"bluebell/models"
+	"bluebell/objects"
 	"fmt"
 	"strconv"
 	"time"
@@ -41,7 +42,18 @@ func CreatePost(post *models.Post) error {
 	return nil
 }
 
-func GetPostDetailByID(id int64) (detail *models.PostDTO, err error) {
+func GetPostDetailByID(id int64, needIncrView bool) (detail *models.PostDTO, err error) {
+	postIDStr := strconv.FormatInt(id, 10)
+	if needIncrView {
+		redis.ZSetIncrBy(redis.KeyPostViewsZset, postIDStr, 1) // 增加一次访问量
+	}
+
+	cacheKey := fmt.Sprintf("%v_%v", objects.ObjPost, id) // 用于获取 local cache 的 key
+	postCache, err := localcache.GetLocalCache().Get(cacheKey)
+	if err == nil { // 本地缓存命中
+		return postCache.(*models.PostDTO), nil
+	}
+
 	detail, err = mysql.SelectPostDetailByID(id)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -108,10 +120,18 @@ func VoteForPost(user_id, post_id int64, direction int8) error {
 	if err != nil {
 		return errors.Wrap(err, "logic:VoteForPost: GetPostUpVoteNums")
 	}
-	logger.Debugf("up: %v, down: %v", upVoteNum[0], downVoteNum[0])
 
 	// 更新帖子的分数
-	newScore := algorithm.GetPostScoreByReddit(int64(publishTime), upVoteNum[0] - downVoteNum[0])
+	newScore := algorithm.GetPostScoreByReddit(int64(publishTime), upVoteNum[0]-downVoteNum[0])
+
+	// 判断是否需要更新 local cache
+	cacheKey := fmt.Sprintf("%v_%v", objects.ObjPost, postIDStr)
+	postInCache, err := localcache.GetLocalCache().Get(cacheKey)
+	if err == nil { // cache hit，更新 local cache
+		post := postInCache.(*models.PostDTO)
+		post.VoteNum = upVoteNum[0]
+		localcache.GetLocalCache().Set(cacheKey, post)
+	}
 	return errors.Wrap(redis.SetPostScore(post_id, newScore), "logic:VoteForPost: SetPostScore")
 
 	// // 获取帖子原来分数
@@ -119,8 +139,6 @@ func VoteForPost(user_id, post_id int64, direction int8) error {
 	// if err != nil && !errors.Is(err, redis.Nil) {
 	// 	return err
 	// }
-
-	
 
 	// // 计算修改后的分数
 	// newScore := int64(direction-oldDirection)*432 + int64(score)
@@ -130,7 +148,6 @@ func VoteForPost(user_id, post_id int64, direction int8) error {
 	// 	return err
 	// }
 
-	
 }
 
 func GetAllPostList(params *models.ParamPostList) ([]*models.PostDTO, int, error) {
@@ -175,10 +192,33 @@ func GetPostListByKeyword2(params *models.ParamPostListByKeyword) ([]*models.Pos
 }
 
 func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
-	// 在 mysql 中查询 post list
-	list, err := mysql.SelectPostListByPostIDs(postIDs)
-	if err != nil {
-		return nil, errors.Wrap(err, "get post list from mysql")
+	list := make([]*models.PostDTO, len(postIDs))
+	missPostIDs := make([]string, 0, len(postIDs))
+	// 先查 local cache
+	for idx, postID := range postIDs {
+		cacheKey := fmt.Sprintf("%v_%v", objects.ObjPost, postID)
+		postDetail, err := localcache.GetLocalCache().Get(cacheKey)
+		if err == nil {
+			list[idx] = postDetail.(*models.PostDTO)
+		} else { // local cache miss
+			missPostIDs = append(missPostIDs, postID)
+		}
+	}
+
+	// 在 mysql 中查询缓存未命中的 post list
+	if len(missPostIDs) != 0 {
+		missPostList, err := mysql.SelectPostListByPostIDs(missPostIDs)
+		if err != nil {
+			return nil, errors.Wrap(err, "get post list from mysql")
+		}
+		// 组装数据
+		idx := 0
+		for i := 0; i < len(list); i++ {
+			if list[i] == nil {
+				list[i] = missPostList[idx]
+				idx++
+			}
+		}
 	}
 
 	// 获取过期帖子 ID
@@ -191,6 +231,7 @@ func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
 
 	// 在 mysql 中查询每个过期 post 的投票数
 	voteNumsFromMySQL := make([]int64, 0)
+	var err error
 	if len(expiredPostIDs) != 0 {
 		voteNumsFromMySQL, err = mysql.SelectPostVoteNumsByIDs(expiredPostIDs)
 		if err != nil {
@@ -225,6 +266,11 @@ func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
 }
 
 func GetHotPostList() ([]*models.PostDTO, error) {
-	postList, err := localcache.GetHotPostDTOList()
-	return postList, errors.Wrap(err, "logic:GetHotPostList: GetHotPostDTOList")
+	posts, err := localcache.GetLocalCache().Get("hotposts")
+	if err != nil { // cache miss
+		// 热榜访问次数一定很高，如果 cache miss，需要立即重建
+		return rebuild.RebuildPostHotList()
+	}
+
+	return posts.([]*models.PostDTO), nil
 }

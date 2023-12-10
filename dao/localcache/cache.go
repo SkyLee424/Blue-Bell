@@ -1,29 +1,17 @@
 package localcache
 
 import (
-	"bluebell/models"
-	"sync"
+	"github.com/bluele/gcache"
+	"github.com/spf13/viper"
 )
 
-var hotPostCache []*models.PostDTO
+var localcache gcache.Cache
 
-var hotPostCacheLock sync.RWMutex
-
-func init() {
-	hotPostCache = make([]*models.PostDTO, 0)
+func InitLocalCache() {
+	size := viper.GetInt("localcache.size")
+	localcache = gcache.New(size).LRU().Build()
 }
 
-func GetHotPostDTOList() ([]*models.PostDTO, error) {
-	hotPostCacheLock.RLock() // 上读锁
-	defer hotPostCacheLock.RUnlock()
-
-	return hotPostCache, nil
-}
-
-// 参数的 hotPosts 已经按照热度排序
-func SetHotPostDTO(hotPosts []*models.PostDTO) {
-	hotPostCacheLock.Lock()
-	defer hotPostCacheLock.Unlock()
-
-	hotPostCache = hotPosts
+func GetLocalCache() gcache.Cache {
+	return localcache
 }
