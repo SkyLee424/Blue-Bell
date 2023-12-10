@@ -22,7 +22,6 @@ const (
 	KeyPostCommunityZsetPF = "bluebell:post:community:" // member: post_id, score: 0
 	KeyPostVotedZsetPF     = "bluebell:post:voted:"     // parma: post_id, member: user_id, score: opinion
 	KeyCachePF             = "bluebell:cache:"
-	KeyPostViewsZset       = "bluebell:post:views" 		// member: post_id, score: views
 
 	// comment
 	KeyCommentIndexZSetPF     = "bluebell:comment:index:"       // param:otype_oid, member:comment_id, score:floor
@@ -37,6 +36,7 @@ const (
 
 	// other
 	KeyViewCreatedTimeZSet = "bluebell:view:create_time" // field: otype_otype, value: created_time(int64)
+	KeyPostViewsZset       = "bluebell:view:post"        // member: post_id, score: views
 )
 
 var Nil = redis.Nil
@@ -181,7 +181,7 @@ func GetZSetMembersRangeByScore(key, min, max string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
-	cmd := rdb.ZRangeByScore(ctx, key,&redis.ZRangeBy{
+	cmd := rdb.ZRangeByScore(ctx, key, &redis.ZRangeBy{
 		Min: min,
 		Max: max,
 	})
@@ -194,6 +194,6 @@ func ZSetRem(key string, member any) error {
 	defer cancel()
 
 	cmd := rdb.ZRem(ctx, key, member)
-	
+
 	return errors.Wrap(cmd.Err(), "redis:ZSetRem: ZRem")
 }
