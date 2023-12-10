@@ -12,6 +12,12 @@ type Post struct {
 	UpdatedAt   Time   `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"update_at"`
 }
 
+type ExpiredPostScore struct {
+	PostID      int64 `gorm:"primaryKey" json:"post_id"`
+	PostScore   int64 `json:"post_score"`
+	PostVoteNum int64 `json:"post_vote_num"`
+}
+
 type PostDoc struct {
 	PostID    int64  `json:"post_id"`
 	Title     string `json:"title"`
