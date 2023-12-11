@@ -162,29 +162,9 @@ func GetCommentList(param *models.ParamCommentList) (*models.CommentListDTO, err
 
 	_commentIDs := commentIDs[start:end] // 分页，减少查询成本
 
-	rootCommentDTO, err := mysql.SelectCommentMetaDataByCommentIDs(nil, _commentIDs)
+	rootCommentDTO, err := getCommentDetailByCommentIDs(true, _commentIDs)
 	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentList: SelectCommentMetaDataByCommentIDs failed")
-	}
-
-	// 查点赞数
-	likes, err := redis.GetCommentLikeOrHateCountByCommentIDs(_commentIDs, true)
-	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentList: GetCommentLikeOrHateCountByCommentIDs failed")
-	}
-
-	contents, err := getCommentContent(_commentIDs)
-	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentContent failed")
-	}
-	if len(contents) != len(rootCommentDTO) {
-		return nil, errors.Wrap(bluebell.ErrInternal, "logic:GetCommentList: contents and rootCommentDTO length is not equal")
-	}
-
-	// 组装根评论的数据
-	for i := 0; i < len(rootCommentDTO); i++ {
-		rootCommentDTO[i].Content.Message = contents[i]
-		rootCommentDTO[i].Like += likes[i]
+		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentDetailByCommentIDs")
 	}
 
 	mapping := make(map[int64]int) // 建立映射
@@ -192,37 +172,13 @@ func GetCommentList(param *models.ParamCommentList) (*models.CommentListDTO, err
 		mapping[rootCommentDTO[i].CommentID] = i
 	}
 
-	replies, err := mysql.SelectCommentReplyMetaDataByCommentIDs(nil, _commentIDs)
+	replies, err := getCommentDetailByCommentIDs(false, _commentIDs)
 	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentList: SelectCommentReplyMetaDataByCommentIDs failed")
+		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentDetailByCommentIDs")
 	}
-
-	// 查询二级评论的 content
-	replyIDs := make([]int64, 0, len(replies))
-	for _, reply := range replies {
-		replyIDs = append(replyIDs, reply.CommentID)
-	}
-	replyContent, err := getCommentContent(replyIDs)
-	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentList: SelectCommentReplyMetaDataByCommentIDs failed")
-	}
-	if len(replyContent) != len(replies) {
-		return nil, errors.Wrap(bluebell.ErrInternal, "logic:GetCommentList: replyContent and replies length is not equal")
-	}
-
-	// 查二级评论的点赞数
-	replyLikes, err := redis.GetCommentLikeOrHateCountByCommentIDs(replyIDs, true)
-	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentList: GetCommentLikeOrHateCountByCommentIDs failed")
-	}
-	if len(replyLikes) != len(replies) {
-		return nil, errors.Wrap(bluebell.ErrInternal, "logic:GetCommentList: replyLikes and replies length is not equal")
-	}
-
+	
 	// 组装数据
 	for i := 0; i < len(replies); i++ {
-		replies[i].Content.Message = replyContent[i]
-		replies[i].Like += replyLikes[i]
 		index, ok := mapping[replies[i].Root]
 		if !ok {
 			return nil, errors.Wrap(bluebell.ErrInternal, "logic:GetCommentList: get mapping[replies[i].Root] failed")
@@ -468,6 +424,48 @@ func getCommentIDs(objType int8, objID int64) ([]int64, error) {
 	} else { // 重建，并且成功，直接使用重建时从 db 获取的数据，避免再多查一次缓存
 		return commentIDs, nil
 	}
+}
+
+func getCommentDetailByCommentIDs(isRoot bool, commentIDs []int64) ([]models.CommentDTO, error) {
+	field := "id"
+	if !isRoot {
+		field = "root"
+	}
+	commentDTOList, err := mysql.SelectCommentMetaDataByCommentIDs(nil, field, commentIDs)
+	if err != nil {
+		return nil, errors.Wrap(err, "logic:GetCommentList: SelectCommentMetaDataByCommentIDs failed")
+	}
+
+	// 查点赞数
+	if !isRoot {  // 子评论，需要获取子评论 id
+		replyIDs := make([]int64, 0, len(commentDTOList))
+		for _, reply := range commentDTOList {
+			replyIDs = append(replyIDs, reply.CommentID)
+		}
+		logger.Debugf("commentID: %v\nreplyID: %v", commentIDs, replyIDs)
+		commentIDs = replyIDs
+	}
+	likes, err := redis.GetCommentLikeOrHateCountByCommentIDs(commentIDs, true)
+	if err != nil {
+		return nil, errors.Wrap(err, "logic:GetCommentList: GetCommentLikeOrHateCountByCommentIDs failed")
+	}
+
+	// 查 content
+	contents, err := getCommentContent(commentIDs)
+	if err != nil {
+		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentContent failed")
+	}
+	if len(contents) != len(commentDTOList) {
+		return nil, errors.Wrap(bluebell.ErrInternal, "logic:GetCommentList: contents and commentDTOList length is not equal")
+	}
+
+	// 组装数据
+	for i := 0; i < len(commentDTOList); i++ {
+		commentDTOList[i].Content.Message = contents[i]
+		commentDTOList[i].Like += likes[i]
+	}
+
+	return commentDTOList, nil
 }
 
 func getCommentContent(commentIDs []int64) ([]string, error) {

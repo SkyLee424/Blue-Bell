@@ -146,12 +146,14 @@ func SelectFloorsByCommentIDs(tx *gorm.DB, commentIDs []int64) ([]int, error) {
 	return floors, errors.Wrap(res.Error, "mysql: SelectFloorsByCommentIDs")
 }
 
-func SelectCommentMetaDataByCommentIDs(tx *gorm.DB, commentIDs []int64) ([]models.CommentDTO, error) {
+// 根据传入的评论 ID，查 comment 的元数据（不包括 content）
+func SelectCommentMetaDataByCommentIDs(tx *gorm.DB, field string, commentIDs []int64) ([]models.CommentDTO, error) {
 	useDB := getUseDB(tx)
 
 	tmp := make([]models.CommentIndex, 0)
 
-	res := useDB.Model(&models.CommentIndex{}).Where("id in ?", commentIDs).Scan(&tmp)
+	subSql := fmt.Sprintf("%v in ?", field)
+	res := useDB.Model(&models.CommentIndex{}).Where(subSql, commentIDs).Scan(&tmp)
 
 	if res.Error != nil {
 		return nil, errors.Wrap(res.Error, "mysql: SelectCommentMetaDataByCommentIDs")
@@ -168,20 +170,6 @@ func SelectCommentContentByCommentIDs(tx *gorm.DB, commentIDs []int64) ([]models
 	res := useDB.Model(&models.CommentContent{}).Where("comment_id in ?", commentIDs).Scan(&contents)
 
 	return contents, errors.Wrap(res.Error, "mysql: SelectCommentContentByCommentIDs")
-}
-
-// 根据传入的根评论 ID，查所有 reply 的元数据（不包括 content）
-func SelectCommentReplyMetaDataByCommentIDs(tx *gorm.DB, commentIDs []int64) ([]models.CommentDTO, error) {
-	useDB := getUseDB(tx)
-	tmp := make([]models.CommentIndex, 0)
-
-	res := useDB.Model(&models.CommentIndex{}).Where("root in ?", commentIDs).Scan(&tmp)
-
-	if res.Error != nil {
-		return nil, errors.Wrap(res.Error, "mysql: SelectCommentMetaDataByCommentIDs")
-	}
-
-	return selectCommentContentHelper(tmp), nil
 }
 
 func selectCommentContentHelper(tmp []models.CommentIndex) []models.CommentDTO {
