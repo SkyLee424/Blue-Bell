@@ -6,8 +6,6 @@ var wg sync.WaitGroup
 
 func InitWorkers()  {
 	PersistencePostScore(&wg)
-	RefreshHotPost(&wg)
-	RefreshPostHotSpot(&wg)
 	
 	PersistenceCommentCount(&wg, true)
 	PersistenceCommentCount(&wg, false)
@@ -17,6 +15,9 @@ func InitWorkers()  {
 	RemoveCommentIndexFromRedis(&wg)
 	RemoveCommentContentFromRedis(&wg)
 
+	RefreshHotPost(&wg)
+	RefreshPostHotSpot(&wg)
+	RefreshCommentHotSpot(&wg)
 	RemoveExpiredObjectView(&wg)
 }
 

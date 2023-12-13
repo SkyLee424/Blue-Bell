@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
 	"bluebell/dao/rebuild"
 	"bluebell/dao/redis"
@@ -8,6 +9,7 @@ import (
 	"bluebell/internal/utils"
 	"bluebell/logger"
 	"bluebell/models"
+	"bluebell/objects"
 	"fmt"
 	"sort"
 	"strconv"
@@ -106,22 +108,7 @@ func CreateComment(param *models.ParamCommentCreate, userID int64) (*models.Comm
 
 	tx0.Commit()
 
-	// 写缓存
-	if index.Root == 0 {
-		_, _, err = rebuild.RebuildCommentIndex(index.ObjType, index.ObjID, 0) // 在写缓存前尝试 rebuild 一下，确保缓存中有完整的 comment_id
-		if err != nil {
-			// 重建失败，如果继续写缓存，可能会造成缓存中不具有完整的 comment_id，拒绝服务
-			return nil, errors.Wrap(err, "logic:CreateComment: RebuildCommentIndex")
-		}
-		if err = redis.AddCommentIndexMembers(index.ObjType, index.ObjID, []int64{commentID}, []int{floor}); err != nil {
-			logger.Warnf("logic:CreateComment: AddCommentIndexMember failed, reason: %v", err.Error())
-		}
-	}
-	if err = redis.AddCommentContents([]int64{commentID}, []string{commentContent.Message}); err != nil {
-		logger.Warnf("logic:CreateComment: AddCommentContent failed, reason: %v", err.Error())
-	}
-
-	return &models.CommentDTO{
+	commentDTO := models.CommentDTO{
 		CommentID: commentID,
 		ObjID:     param.ObjID,
 		Type:      param.ObjType,
@@ -136,7 +123,34 @@ func CreateComment(param *models.ParamCommentCreate, userID int64) (*models.Comm
 		},
 		CreatedAt: models.Time(time.Now()),
 		UpdatedAt: models.Time(time.Now()),
-	}, nil
+	}
+
+	// 写缓存
+	if index.Root == 0 {
+		_, _, err = rebuild.RebuildCommentIndex(index.ObjType, index.ObjID, 0) // 在写缓存前尝试 rebuild 一下，确保缓存中有完整的 comment_id
+		if err != nil {
+			// 重建失败，如果继续写缓存，可能会造成缓存中不具有完整的 comment_id，拒绝服务
+			return nil, errors.Wrap(err, "logic:CreateComment: RebuildCommentIndex")
+		}
+		if err = redis.AddCommentIndexMembers(index.ObjType, index.ObjID, []int64{commentID}, []int{floor}); err != nil {
+			logger.Warnf("logic:CreateComment: AddCommentIndexMember failed, reason: %v", err.Error())
+		}
+	} else { // 判断是否需要更新 local cache
+		cacheKey := fmt.Sprintf("%v_%v_replies", objects.ObjComment, index.Root)
+		replyIDs, err := localcache.GetLocalCache().Get(cacheKey)
+		if err == nil { // cache hit，need update
+			tmp := replyIDs.([]int64)			
+			tmp = append(tmp, commentID)
+			localcache.GetLocalCache().Set(cacheKey, tmp)
+			cacheKey = fmt.Sprintf("%v_%v_replies", objects.ObjComment, commentID)
+			localcache.GetLocalCache().Set(cacheKey, commentDTO)
+		}
+	}
+	if err = redis.AddCommentContents([]int64{commentID}, []string{commentContent.Message}); err != nil {
+		logger.Warnf("logic:CreateComment: AddCommentContent failed, reason: %v", err.Error())
+	}
+
+	return &commentDTO, nil
 }
 
 // 默认按照楼层排序
@@ -160,9 +174,9 @@ func GetCommentList(param *models.ParamCommentList) (*models.CommentListDTO, err
 		end = int64(total)
 	}
 
-	_commentIDs := commentIDs[start:end] // 分页，减少查询成本
+	rootCommentIDs := commentIDs[start:end] // 分页，减少查询成本
 
-	rootCommentDTO, err := getCommentDetailByCommentIDs(true, _commentIDs)
+	rootCommentDTO, err := GetCommentDetailByCommentIDs(true, true, rootCommentIDs)
 	if err != nil {
 		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentDetailByCommentIDs")
 	}
@@ -172,11 +186,11 @@ func GetCommentList(param *models.ParamCommentList) (*models.CommentListDTO, err
 		mapping[rootCommentDTO[i].CommentID] = i
 	}
 
-	replies, err := getCommentDetailByCommentIDs(false, _commentIDs)
+	replies, err := GetCommentDetailByCommentIDs(false, false, rootCommentIDs)
 	if err != nil {
 		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentDetailByCommentIDs")
 	}
-	
+
 	// 组装数据
 	for i := 0; i < len(replies); i++ {
 		index, ok := mapping[replies[i].Root]
@@ -294,6 +308,13 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, false)
 	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, true)
 	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, false)
+	redis.ZSetRem(redis.KeyCommentViewZset, params.CommentID)
+
+	// 删本地缓存
+	cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, params.CommentID)
+	localcache.GetLocalCache().Remove(cacheKey)
+	cacheKey = fmt.Sprintf("%v_%v_replies", objects.ObjComment, params.CommentID)
+	localcache.GetLocalCache().Remove(cacheKey)
 
 	return nil
 }
@@ -348,9 +369,6 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 		if err := redis.RemCommentUserLikeOrHateMapping(userID, commentID, objID, objType, like); err != nil {
 			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentLikeOrHateUser")
 		}
-
-		return errors.Wrap(redis.IncrCommentLikeOrHateCount(commentID, -1, like), "logic:LikeOrHateForComment: IncrCommentIndexCountField")
-
 	} else { // 点赞（踩）
 		// 先删可能存在的 bluebell:comment:rem:cid_uid（用户之前取消过点赞）
 		// 防止后台任务将我们刚刚添加的 cid_uid 从 db 删掉（这样会导致可以重复点赞）
@@ -372,12 +390,29 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 		if err != nil {
 			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentUserLikeOrHateMapping")
 		}
-
-		return errors.Wrap(redis.IncrCommentLikeOrHateCount(commentID, 1, like), "logic:LikeOrHateForComment: IncrCommentIndexCountField")
 	}
 
-	// 无效参数
-	// return errors.Wrap(bluebell.ErrInvalidParam, "logic:LikeOrHateForComment: invalid opinion")
+	offset := 1
+	if pre {
+		offset = -1
+	}
+
+	if err = redis.IncrCommentLikeOrHateCount(commentID, offset, like); err != nil {
+		return errors.Wrap(err, "logic:LikeOrHateForComment: IncrCommentIndexCountField")
+	}
+
+	// 更新缓存(if exists)
+	cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, commentID)
+	comment, err := localcache.GetLocalCache().Get(cacheKey)
+	if err == nil {
+		tmp := comment.(models.CommentDTO)
+		tmp.Like += offset
+		if err = localcache.GetLocalCache().Set(cacheKey, tmp); err != nil {
+			logger.Warnf("logic:LikeOrHateForComment: Update local cache failed, reason: %v", err.Error())
+		}
+	}
+
+	return nil
 }
 
 func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserLikeOrHateList) ([]string, error) {
@@ -405,6 +440,125 @@ func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserL
 	return listStr, nil
 }
 
+func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64) ([]models.CommentDTO, error) {
+	var commentDTOList []models.CommentDTO
+	missCommentIDs := make([]int64, 0, len(commentIDs))
+	if isRoot { 
+		commentDTOList = make([]models.CommentDTO, len(commentIDs))
+		// 调用者要求查询 commentIDs 对应的 metadata
+		for idx, commentID := range commentIDs {
+			commentIDStr := strconv.FormatInt(commentID, 10)
+			// 递增 view
+			if needIncrView {
+				isNewMember, err := redis.ZSetIncrBy(redis.KeyCommentViewZset, commentIDStr, 1)
+				if err != nil {
+					logger.Warnf("logic:getCommentDetailByCommentIDs: ZSetIncrBy failed(incr comment view)")
+				} else if isNewMember {
+					member := fmt.Sprintf("%v_%v", objects.ObjComment, commentID)
+					if err := redis.ZSetAdd(redis.KeyViewCreatedTimeZSet, member, float64(time.Now().Unix())); err != nil {
+						logger.Warnf("logic:GetPostDetailByID: SetPostViewCreateTime failed")
+						// 应该保证事务一致性原则（回滚 incr 操作）
+						// 这里简单处理，不考虑回滚失败
+						redis.ZSetIncrBy(redis.KeyCommentViewZset, commentIDStr, -1)
+					}
+				}
+			}
+			
+			// 查 local cache，获取 metadata
+			cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, commentIDStr) // 用于获取 local cache 的 key
+			commentDTO, err := localcache.GetLocalCache().Get(cacheKey)
+			if err == nil { // cache hit
+				commentDTOList[idx] = commentDTO.(models.CommentDTO)
+			} else { // cache miss
+				commentDTOList[idx].CommentID = -1;
+				missCommentIDs = append(missCommentIDs, commentID)
+			}
+		}
+	} else {
+		commentDTOList = make([]models.CommentDTO, 0, len(commentIDs))
+		// 调用者要求查询 commentIDs 的子评论列表
+		for _, commentID := range commentIDs {
+			cacheKey := fmt.Sprintf("%v_%v_replies", objects.ObjComment, commentID)
+			
+			replyList, err := localcache.GetLocalCache().Get(cacheKey)
+			if err == nil { // cache hit
+				// 在 local cache 中获取子评论的 metadata
+				replyCommentIDs := replyList.([]int64)
+				replyMetadata, err := GetCommentDetailByCommentIDs(true, false, replyCommentIDs)
+				if err != nil {
+					logger.Warnf("logic:GetCommentDetailByCommentIDs: get reply metadata failed, reason: %v", err.Error())
+					missCommentIDs = append(missCommentIDs, commentID)
+				} else {
+					commentDTOList = append(commentDTOList, replyMetadata...)
+				}
+			} else { // cache miss
+				missCommentIDs = append(missCommentIDs, commentID)
+			}
+		}
+	}
+
+	if len(missCommentIDs) == 0 { // all hit
+		return commentDTOList, nil
+	}
+	// 现在只需要查询 missCommentIDs 的元数据
+
+	field := "id"
+	if !isRoot {
+		field = "root"
+	}
+	// commentDTOList, err := mysql.SelectCommentMetaDataByCommentIDs(nil, field, commentIDs)
+	missCommentDTOList, err := mysql.SelectCommentMetaDataByCommentIDs(nil, field, missCommentIDs)
+	if err != nil {
+		return nil, errors.Wrap(err, "logic:GetCommentList: SelectCommentMetaDataByCommentIDs failed")
+	}
+
+	// 查点赞数
+	if !isRoot {  // 子评论，需要获取子评论 id
+		replyIDs := make([]int64, 0, len(missCommentDTOList))
+		for _, reply := range missCommentDTOList {
+			replyIDs = append(replyIDs, reply.CommentID)
+		}
+		missCommentIDs = replyIDs
+	}
+	likes, err := redis.GetCommentLikeOrHateCountByCommentIDs(missCommentIDs, true)
+	if err != nil {
+		return nil, errors.Wrap(err, "logic:GetCommentList: GetCommentLikeOrHateCountByCommentIDs failed")
+	}
+
+	// 查 content
+	contents, err := getCommentContent(missCommentIDs)
+	if err != nil {
+		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentContent failed")
+	}
+	if len(contents) != len(missCommentDTOList) {
+		return nil, errors.Wrap(bluebell.ErrInternal, "logic:GetCommentList: contents and missCommentDTOList length is not equal")
+	}
+
+	// 组装数据
+	for i := 0; i < len(missCommentDTOList); i++ {
+		missCommentDTOList[i].Content.Message = contents[i]
+		missCommentDTOList[i].Like += likes[i]
+	}
+
+	if isRoot {
+		j := 0
+		for i := 0; i < len(commentDTOList); i++ {
+			if commentDTOList[i].CommentID == -1 { 
+				if j >= len(missCommentDTOList) {
+					logger.Warnf("logic:GetCommentDetailByCommentIDs: len(missCommentDTOList) invalid, check %v", redis.KeyCommentViewZset)
+					break
+				}
+				commentDTOList[i] = missCommentDTOList[j]
+				j++
+			}
+		}
+	} else {
+		commentDTOList = append(commentDTOList, missCommentDTOList...)
+	}
+
+	return commentDTOList, nil
+}
+
 func getCommentIDs(objType int8, objID int64) ([]int64, error) {
 	readDB := func(err error) ([]int64, error) {
 		logger.Warnf("logic:GetCommentList: RebuildCommentIndex failed, reason: %v", err.Error())
@@ -424,48 +578,6 @@ func getCommentIDs(objType int8, objID int64) ([]int64, error) {
 	} else { // 重建，并且成功，直接使用重建时从 db 获取的数据，避免再多查一次缓存
 		return commentIDs, nil
 	}
-}
-
-func getCommentDetailByCommentIDs(isRoot bool, commentIDs []int64) ([]models.CommentDTO, error) {
-	field := "id"
-	if !isRoot {
-		field = "root"
-	}
-	commentDTOList, err := mysql.SelectCommentMetaDataByCommentIDs(nil, field, commentIDs)
-	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentList: SelectCommentMetaDataByCommentIDs failed")
-	}
-
-	// 查点赞数
-	if !isRoot {  // 子评论，需要获取子评论 id
-		replyIDs := make([]int64, 0, len(commentDTOList))
-		for _, reply := range commentDTOList {
-			replyIDs = append(replyIDs, reply.CommentID)
-		}
-		logger.Debugf("commentID: %v\nreplyID: %v", commentIDs, replyIDs)
-		commentIDs = replyIDs
-	}
-	likes, err := redis.GetCommentLikeOrHateCountByCommentIDs(commentIDs, true)
-	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentList: GetCommentLikeOrHateCountByCommentIDs failed")
-	}
-
-	// 查 content
-	contents, err := getCommentContent(commentIDs)
-	if err != nil {
-		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentContent failed")
-	}
-	if len(contents) != len(commentDTOList) {
-		return nil, errors.Wrap(bluebell.ErrInternal, "logic:GetCommentList: contents and commentDTOList length is not equal")
-	}
-
-	// 组装数据
-	for i := 0; i < len(commentDTOList); i++ {
-		commentDTOList[i].Content.Message = contents[i]
-		commentDTOList[i].Like += likes[i]
-	}
-
-	return commentDTOList, nil
 }
 
 func getCommentContent(commentIDs []int64) ([]string, error) {
