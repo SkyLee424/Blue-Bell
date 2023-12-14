@@ -3,6 +3,7 @@ package rebuild
 import (
 	"bluebell/dao/mysql"
 	"bluebell/dao/redis"
+	bluebell "bluebell/errors"
 	"bluebell/logger"
 	"fmt"
 
@@ -131,10 +132,29 @@ func RebuildCommentUserLikeOrHateMapping(userID, objID int64, objType int8, like
 		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentUserLikeOrHateMapping: SelectCommentUserLikeOrHateList")
 	}
 
-	err = redis.AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID, objType, like, list)
+	// 需要移除在 bluebell:comment:rem:cid 中的 comment_id
+	tmp := make([]any, len(list))
+	for idx, commentID := range list {
+		tmp[idx] = commentID
+	}
+	exists, err := redis.SetIsMembers(redis.KeyCommentRemCidSet, tmp)
+	if err != nil {
+		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentUserLikeOrHateMapping: SetIsMembers")
+	}
+	if len(list) != len(exists) {
+		return nil, false, errors.Wrap(bluebell.ErrInternal, "rebuild:RebuildCommentUserLikeOrHateMapping: list and exists' length not equal")
+	}
+	res := make([]int64, 0, len(list))
+	for idx, commentID := range list {
+		if !exists[idx] {
+			res = append(res, commentID)
+		}
+	}
+
+	err = redis.AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID, objType, like, res)
 	if err != nil {
 		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentUserLikeOrHateMapping: AddCommentUserLikeOrHateMappingByCommentIDs")
 	}
-	logger.Infof("rebuild:RebuildCommentUserLikeOrHateMapping: Rebuild %d data from mysql to redis", len(list))
-	return list, true, nil
+	logger.Infof("rebuild:RebuildCommentUserLikeOrHateMapping: Rebuild %d data from mysql to redis", len(res))
+	return res, true, nil
 }

@@ -122,6 +122,26 @@ func GetSetMembersByKey(key string) ([]string, error) {
 	return cmd.Val(), nil
 }
 
+func SetIsMembers(key string, members []any) ([]bool, error)  {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	pipe := rdb.Pipeline()
+	for _, member := range members {
+		pipe.SIsMember(ctx, key, member)
+	}
+
+	cmds, err := pipe.Exec(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "redis:SetIsMembers: SIsMember")
+	}
+	res := make([]bool, 0, len(members))
+	for _, cmd := range cmds {
+		res = append(res, cmd.(*redis.BoolCmd).Val())
+	}
+	return res, nil
+}
+
 func GetKeys(pattern string) ([]string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
