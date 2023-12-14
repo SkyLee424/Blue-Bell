@@ -77,12 +77,14 @@ func main() {
 		// Waits for clients that are still requesting, but will force exit after the specified time has elapsed.
 		ctx, cancel := context.WithTimeout(context.Background(), time.Duration(viper.GetInt64("server.shutdown_waitting_time")))
 		defer cancel()
+		logger.Infof("Shutting down HTTP Server(wait for all connections to be closed)...")
 
 		// Shutdown gracefully shuts down the server without interrupting any active connections.
 		if err := srv.Shutdown(ctx); err != nil {
 			// Error from closing listeners, or context timeout:
 			logger.Errorf("Blue-Bell server shutdown: %v", err)
 		}
+		logger.Infof("Http server closed successfully")
 		close(idleConnsClosed)
 	}()
 
@@ -92,5 +94,7 @@ func main() {
 	}
 
 	<-idleConnsClosed // 直到 close 后，主线程才会退出
+	logger.Infof("Waitting for all background tasks to complete...")
 	workers.Wait()    // 等待所有后台任务结束才退出
+	logger.Infof("Done.\n\nBlueBell server closed successfully")
 }

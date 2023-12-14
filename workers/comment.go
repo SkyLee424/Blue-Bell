@@ -8,14 +8,13 @@ import (
 	"errors"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/viper"
 )
 
 // 持久化评论的点赞数
-func PersistenceCommentCount(wg *sync.WaitGroup, like bool) {
+func PersistenceCommentCount(like bool) {
 	persistenceInterval := time.Second * time.Duration(viper.GetInt64("service.comment.count.persistence_interval"))
 	waitTime := 0 * time.Second
 	countExpireTime := time.Second * time.Duration(viper.GetInt64("service.comment.count.expire_time"))
@@ -24,7 +23,9 @@ func PersistenceCommentCount(wg *sync.WaitGroup, like bool) {
 	rootloop:
 		for {
 			time.Sleep(waitTime)
-			wg.Add(1)
+			if checkIfExit() {
+				return				
+			}
 
 			// 获取所有的 key
 			pf := redis.KeyCommentLikeStringPF
@@ -32,25 +33,25 @@ func PersistenceCommentCount(wg *sync.WaitGroup, like bool) {
 				pf = redis.KeyCommentHateStringPF
 			}
 			keys, err := redis.GetKeys(pf + "*")
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			// 筛选逻辑过期的 key，准备持久化
 			expiredKeys, err := getExpiredKeys(keys, countExpireTime)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 			// 不需要持久化
 			if len(expiredKeys) == 0 {
 				waitTime = persistenceInterval
-				wg.Done()
+				markAsExit()
 				continue
 			}
 
 			// 获取过期评论的点赞（踩）数
 			counts, err := redis.GetCommentLikeOrHateCountByKeys(expiredKeys)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
@@ -63,7 +64,7 @@ func PersistenceCommentCount(wg *sync.WaitGroup, like bool) {
 			for i := 0; i < len(expiredKeys); i++ {
 				commentID, _ := strconv.ParseInt(utils.Substr(expiredKeys[i], len(redis.KeyCommentLikeStringPF), len(expiredKeys[i])), 10, 64)
 				err := mysql.IncrCommentIndexCountField(tx, field, commentID, counts[i])
-				if !checkError(err, &waitTime, wg) {
+				if !checkError(err, &waitTime) {
 					tx.Rollback()     // 有一个更新失败，回滚事务，稍后重新尝试
 					continue rootloop // 注意，不是当前的循环，是最外层的循环
 				}
@@ -79,13 +80,13 @@ func PersistenceCommentCount(wg *sync.WaitGroup, like bool) {
 			}
 
 			waitTime = persistenceInterval
-			wg.Done()
+			markAsExit()
 		}
 	}()
 }
 
 // 持久化评论有哪些用户点赞
-func PersistenceCommentCidUid(wg *sync.WaitGroup, like bool) {
+func PersistenceCommentCidUid(like bool) {
 	persistenceInterval := time.Second * time.Duration(viper.GetInt64("service.comment.like_hate_user.persistence_interval"))
 	waitTime := 0 * time.Second
 	tmpStr := "service.comment.like_hate_user.like_expire_time"
@@ -100,29 +101,31 @@ func PersistenceCommentCidUid(wg *sync.WaitGroup, like bool) {
 	rootloop:
 		for {
 			time.Sleep(waitTime)
-			wg.Add(1)
+			if checkIfExit() {
+				return				
+			}
 
 			keys, err := redis.GetKeys(pf + "*")
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			// 筛选逻辑过期的 key
 			expiredKeys, err := getExpiredKeys(keys, expireTime)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 			// 不需要持久化
 			if len(expiredKeys) == 0 {
 				waitTime = persistenceInterval
-				wg.Done()
+				markAsExit()
 				continue
 			}
 
 			// 遍历
 			for i := 0; i < len(expiredKeys); i++ {
 				UserIDs, err := redis.GetSetMembersByKey(expiredKeys[i])
-				if !checkError(err, &waitTime, wg) {
+				if !checkError(err, &waitTime) {
 					continue rootloop
 				}
 
@@ -136,7 +139,7 @@ func PersistenceCommentCidUid(wg *sync.WaitGroup, like bool) {
 				for i := 0; i < len(UserIDs); i++ {
 					userID, _ := strconv.ParseInt(UserIDs[i], 10, 64)
 					err := mysql.CreateCommentLikeOrHateUser(tx, commentID, userID, objID, int8(objType), like)
-					if !checkError(err, &waitTime, wg) {
+					if !checkError(err, &waitTime) {
 						tx.Rollback()
 						continue rootloop // ?
 					}
@@ -153,28 +156,30 @@ func PersistenceCommentCidUid(wg *sync.WaitGroup, like bool) {
 			}
 
 			waitTime = persistenceInterval
-			wg.Done()
+			markAsExit()
 		}
 	}()
 }
 
-func RemoveCommentCidUidFromDB(wg *sync.WaitGroup) {
+func RemoveCommentCidUidFromDB() {
 	removeInterval := time.Second * time.Duration(viper.GetInt64("service.comment.like_hate_user.remove_interval"))
 	waitTime := 0 * time.Second
 	go func() {
 		for {
 			time.Sleep(waitTime)
-			wg.Add(1)
+			if checkIfExit() {
+				return				
+			}
 
 			commentIDStrs, err := redis.GetSetMembersByKey(redis.KeyCommentRemCidSet)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			// 不需要删除
 			if len(commentIDStrs) == 0 {
 				waitTime = removeInterval
-				wg.Done()
+				markAsExit()
 				continue
 			}
 
@@ -183,59 +188,61 @@ func RemoveCommentCidUidFromDB(wg *sync.WaitGroup) {
 				commentIDs[i], _ = strconv.ParseInt(commentIDStrs[i], 10, 64)
 			}
 			err = mysql.DeleteCommentUserLikeMappingByCommentIDs(nil, commentIDs)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			logger.Infof("workers:RemoveCommentCidUid: Removed %d ciduid in mysql", len(commentIDs))
 
 			err = redis.DelKeys([]string{redis.KeyCommentRemCidSet})
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			logger.Infof("workers:RemoveCommentCidUid: Removed %d ciduid in redis", len(commentIDs))
 			waitTime = removeInterval
-			wg.Done()
+			markAsExit()
 		}
 	}()
 }
 
-func RemoveCommentIndexFromRedis(wg *sync.WaitGroup) {
+func RemoveCommentIndexFromRedis() {
 	removeInterval := time.Second * time.Duration(viper.GetInt64("service.comment.index.remove_interval"))
 	expireTime := time.Second * time.Duration(viper.GetInt64("service.comment.index.expire_time"))
 	pattern := redis.KeyCommentIndexZSetPF + "*"
 
-	removeLogicalExpiredKeysHelper(wg, removeInterval, expireTime, pattern)
+	removeLogicalExpiredKeysHelper(removeInterval, expireTime, pattern)
 }
 
-func RemoveCommentContentFromRedis(wg *sync.WaitGroup) {
+func RemoveCommentContentFromRedis() {
 	removeInterval := time.Second * time.Duration(viper.GetInt64("service.comment.content.remove_interval"))
 	expireTime := time.Second * time.Duration(viper.GetInt64("service.comment.content.expire_time"))
 	pattern := redis.KeyCommentContentStringPF + "*"
 
-	removeLogicalExpiredKeysHelper(wg, removeInterval, expireTime, pattern)
+	removeLogicalExpiredKeysHelper(removeInterval, expireTime, pattern)
 }
 
-func removeLogicalExpiredKeysHelper(wg *sync.WaitGroup, removeInterval, logicalExpireTime time.Duration, pattern string) {
+func removeLogicalExpiredKeysHelper(removeInterval, logicalExpireTime time.Duration, pattern string) {
 	waitTime := 0 * time.Second
 	go func() {
 		for {
 			time.Sleep(waitTime)
-			wg.Add(1)
+			if checkIfExit() {
+				return				
+			}
 
 			keys, err := redis.GetKeys(pattern)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			idleTimes, err := redis.GetKeysIdleTime(keys)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 			if len(keys) != len(idleTimes) {
 				checkError(errors.New("workers:removeLogicalExpiredKeysHelper: keys and idleTimes length not equal"),
-					&waitTime, wg)
+					&waitTime)
 				continue
 			}
 
@@ -247,18 +254,18 @@ func removeLogicalExpiredKeysHelper(wg *sync.WaitGroup, removeInterval, logicalE
 			}
 			if len(expiredKeys) == 0 { // 不需要删除
 				waitTime = removeInterval
-				wg.Done()
+				markAsExit()
 				continue
 			}
 
 			err = redis.DelKeys(expiredKeys)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			logger.Infof("workers:removeLogicalExpiredKeysHelper: Removed %d expired keys(%v) from redis", len(expiredKeys), pattern)
 			waitTime = removeInterval
-			wg.Done()
+			markAsExit()
 		}
 	}()
 }

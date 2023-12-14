@@ -1,26 +1,43 @@
 package workers
 
-import "sync"
+import "bluebell/logger"
 
-var wg sync.WaitGroup
+var done chan int		// 标记主 goroutine 即将退出
+var semWorker chan int  // 看作信号量，代表当前正在运行的后台 worker 数量
 
-func InitWorkers()  {
-	PersistencePostScore(&wg)
-	
-	PersistenceCommentCount(&wg, true)
-	PersistenceCommentCount(&wg, false)
-	PersistenceCommentCidUid(&wg, true)
-	PersistenceCommentCidUid(&wg, false)
-	RemoveCommentCidUidFromDB(&wg)
-	RemoveCommentIndexFromRedis(&wg)
-	RemoveCommentContentFromRedis(&wg)
+const total = 12 // 后台任务的数量
 
-	RefreshHotPost(&wg)
-	RefreshPostHotSpot(&wg)
-	RefreshCommentHotSpot(&wg)
-	RemoveExpiredObjectView(&wg)
+func InitWorkers() {
+	done = make(chan int, total)
+	semWorker = make(chan int, total)
+	for i := 0; i < total; i++ {
+		semWorker <- 1
+	}
+
+	PersistencePostScore()
+
+	PersistenceCommentCount(true)
+	PersistenceCommentCount(false)
+	PersistenceCommentCidUid(true)
+	PersistenceCommentCidUid(false)
+	RemoveCommentCidUidFromDB()
+	RemoveCommentIndexFromRedis()
+	RemoveCommentContentFromRedis()
+
+	RefreshHotPost()
+	RefreshPostHotSpot()
+	RefreshCommentHotSpot()
+	RemoveExpiredObjectView()
 }
 
-func Wait()  {
-	wg.Wait()
+func Wait() {
+	// 给后台任务传递消息
+	for i := 0; i < total; i++ {
+		done <- 1
+	}
+	// 阻塞等待所有后台任务退出
+	for i := 0; i < total; i++ {
+		<-semWorker
+	}
+	logger.Infof("All background workers have exited")
 }

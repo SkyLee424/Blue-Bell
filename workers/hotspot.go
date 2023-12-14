@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/spf13/viper"
@@ -20,7 +19,7 @@ import (
 // 需要解决根评论错位的问题
 
 // 刷新热点帖子
-func RefreshPostHotSpot(wg *sync.WaitGroup) {
+func RefreshPostHotSpot() {
 	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_spot.refresh_time"))
 	waitTime := 0 * time.Second
 	size := viper.GetInt64("service.hot_spot.size_for_post")
@@ -28,11 +27,13 @@ func RefreshPostHotSpot(wg *sync.WaitGroup) {
 	go func() {
 		for {
 			time.Sleep(waitTime)
-			wg.Add(1)
+			if checkIfExit() {
+				return				
+			}
 
 			// 从 redis 中获取前 size 条 view 的帖子 id
 			postIDs, _, err := redis.GetPostIDs(1, size, "views")
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
@@ -56,12 +57,12 @@ func RefreshPostHotSpot(wg *sync.WaitGroup) {
 			// 	logger.("localcache: %v", v)
 			// }
 			waitTime = refreshTime
-			wg.Done()
+			markAsExit()
 		}
 	}()
 }
 
-func RefreshCommentHotSpot(wg *sync.WaitGroup)  {
+func RefreshCommentHotSpot()  {
 	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_spot.refresh_time"))
 	waitTime := 0 * time.Second
 	size := viper.GetInt64("service.hot_spot.size_for_comment")
@@ -69,16 +70,18 @@ func RefreshCommentHotSpot(wg *sync.WaitGroup)  {
 		root:
 		for {
 			time.Sleep(waitTime)
-			wg.Add(1)
+			if checkIfExit() {
+				return				
+			}
 
 			// 获取要缓存的根评论 id
 			commentIDStrs, err := redis.GetZSetMembersRangeByIndex(redis.KeyCommentViewZset, 0, size, true)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 			if len(commentIDStrs) == 0 {
 				waitTime = refreshTime
-				wg.Done()
+				markAsExit()
 				continue
 			}
 
@@ -86,7 +89,7 @@ func RefreshCommentHotSpot(wg *sync.WaitGroup)  {
 			commentIDs := make([]int64, len(commentIDStrs))
 			for idx, commentIDStr := range commentIDStrs {
 				commentIDs[idx], err = strconv.ParseInt(commentIDStr, 10, 64)
-				if !checkError(err, &waitTime, wg) {
+				if !checkError(err, &waitTime) {
 					continue root
 				}
 			}
@@ -96,13 +99,13 @@ func RefreshCommentHotSpot(wg *sync.WaitGroup)  {
 			})
 			rootCommentDTOs, err := logic.GetCommentDetailByCommentIDs(true, false, commentIDs)
 
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			// 获取 replies
 			replies, err := logic.GetCommentDetailByCommentIDs(false, false, commentIDs)
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
@@ -150,12 +153,12 @@ func RefreshCommentHotSpot(wg *sync.WaitGroup)  {
 			}
 
 			waitTime = refreshTime
-			wg.Done()
+			markAsExit()
 		}
 	}()
 }
 
-func RemoveExpiredObjectView(wg *sync.WaitGroup) {
+func RemoveExpiredObjectView() {
 	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_spot.refresh_time"))
 	waitTime := 0 * time.Second
 	timeInterval := viper.GetInt64("service.hot_spot.time_interval")
@@ -164,27 +167,29 @@ func RemoveExpiredObjectView(wg *sync.WaitGroup) {
 		root:
 		for {
 			time.Sleep(waitTime)
-			wg.Add(1)
+			if checkIfExit() {
+				return				
+			}
 
 			// 从 bluebell:views 中获取过期的 view 的 otype_oid
 			targetTimeStamp := time.Now().Unix() - timeInterval
 			expiredMembers, err := redis.GetZSetMembersRangeByScore(redis.KeyViewCreatedTimeZSet, "0", fmt.Sprintf("%v", targetTimeStamp))
-			if !checkError(err, &waitTime, wg) {
+			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			for _, expiredMember := range expiredMembers {
 				tmp := strings.Split(expiredMember, "_")
 				if len(tmp) != 2 { // 检查一下长度
-					checkError(bluebell.ErrInternal, &waitTime, wg)
+					checkError(bluebell.ErrInternal, &waitTime)
 					continue root
 				}
 				objType, err := strconv.ParseInt(tmp[0], 10, 64)
-				if !checkError(err, &waitTime, wg) {
+				if !checkError(err, &waitTime) {
 					continue root
 				}
 				objID, err := strconv.ParseInt(tmp[1], 10, 64)
-				if !checkError(err, &waitTime, wg) {
+				if !checkError(err, &waitTime) {
 					continue root
 				}
 
@@ -201,7 +206,7 @@ func RemoveExpiredObjectView(wg *sync.WaitGroup) {
 			}
 
 			waitTime = refreshTime
-			wg.Done()
+			markAsExit()
 		}
 	}()
 }

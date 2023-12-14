@@ -3,7 +3,6 @@ package workers
 import (
 	"bluebell/dao/redis"
 	"bluebell/logger"
-	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -13,11 +12,11 @@ import (
 //
 // 1. 输出日志
 // 2. 修改 waitTime 为较小值，尽快重试
-func checkError(err error, waitTime *time.Duration, wg *sync.WaitGroup) bool {
+func checkError(err error, waitTime *time.Duration) bool {
 	if err != nil && !errors.Is(err, redis.Nil) {
 		logger.ErrorWithStack(err)
 		*waitTime = time.Second * 10 // 10 s 后再次尝试获取
-		wg.Done()
+		markAsExit()
 		return false
 	}
 	return true
@@ -35,4 +34,18 @@ func getExpiredKeys(keys []string, expiredTime time.Duration) ([]string, error) 
 		}
 	}
 	return expiredKeys, nil
+}
+
+func checkIfExit() bool {
+	select {
+	case <- done:
+		return true
+	case <-semWorker:
+	}
+	return false
+}
+
+// 标记为睡眠
+func markAsExit()  {
+	semWorker <- 1
 }
