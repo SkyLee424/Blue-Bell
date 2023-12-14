@@ -16,7 +16,8 @@ import (
 
 // 持久化评论的点赞数
 func PersistenceCommentCount(wg *sync.WaitGroup, like bool) {
-	waitTime := time.Second * time.Duration(viper.GetInt64("service.comment.count.persistence_interval"))
+	persistenceInterval := time.Second * time.Duration(viper.GetInt64("service.comment.count.persistence_interval"))
+	waitTime := 0 * time.Second
 	countExpireTime := time.Second * time.Duration(viper.GetInt64("service.comment.count.expire_time"))
 
 	go func() {
@@ -42,6 +43,7 @@ func PersistenceCommentCount(wg *sync.WaitGroup, like bool) {
 			}
 			// 不需要持久化
 			if len(expiredKeys) == 0 {
+				waitTime = persistenceInterval
 				wg.Done()
 				continue
 			}
@@ -76,6 +78,7 @@ func PersistenceCommentCount(wg *sync.WaitGroup, like bool) {
 				logger.Infof("workers:persistenceCountHelper: Removed %d pieces of expired data from Redis", len(expiredKeys))
 			}
 
+			waitTime = persistenceInterval
 			wg.Done()
 		}
 	}()
@@ -83,7 +86,8 @@ func PersistenceCommentCount(wg *sync.WaitGroup, like bool) {
 
 // 持久化评论有哪些用户点赞
 func PersistenceCommentCidUid(wg *sync.WaitGroup, like bool) {
-	waitTime := time.Second * time.Duration(viper.GetInt64("service.comment.like_hate_user.persistence_interval"))
+	persistenceInterval := time.Second * time.Duration(viper.GetInt64("service.comment.like_hate_user.persistence_interval"))
+	waitTime := 0 * time.Second
 	tmpStr := "service.comment.like_hate_user.like_expire_time"
 	pf := redis.KeyCommentLikeSetPF
 	if !like {
@@ -110,6 +114,7 @@ func PersistenceCommentCidUid(wg *sync.WaitGroup, like bool) {
 			}
 			// 不需要持久化
 			if len(expiredKeys) == 0 {
+				waitTime = persistenceInterval
 				wg.Done()
 				continue
 			}
@@ -147,13 +152,15 @@ func PersistenceCommentCidUid(wg *sync.WaitGroup, like bool) {
 				logger.Infof("workers:persistenceCidUidHelper: Removed %d pieces of expired data from Redis", len(expiredKeys))
 			}
 
+			waitTime = persistenceInterval
 			wg.Done()
 		}
 	}()
 }
 
 func RemoveCommentCidUidFromDB(wg *sync.WaitGroup) {
-	waitTime := time.Second * time.Duration(viper.GetInt64("service.comment.like_hate_user.remove_interval"))
+	removeInterval := time.Second * time.Duration(viper.GetInt64("service.comment.like_hate_user.remove_interval"))
+	waitTime := 0 * time.Second
 	go func() {
 		for {
 			time.Sleep(waitTime)
@@ -166,6 +173,7 @@ func RemoveCommentCidUidFromDB(wg *sync.WaitGroup) {
 
 			// 不需要删除
 			if len(commentIDStrs) == 0 {
+				waitTime = removeInterval
 				wg.Done()
 				continue
 			}
@@ -187,28 +195,30 @@ func RemoveCommentCidUidFromDB(wg *sync.WaitGroup) {
 			}
 
 			logger.Infof("workers:RemoveCommentCidUid: Removed %d ciduid in redis", len(commentIDs))
+			waitTime = removeInterval
 			wg.Done()
 		}
 	}()
 }
 
 func RemoveCommentIndexFromRedis(wg *sync.WaitGroup) {
-	waitTime := time.Second * time.Duration(viper.GetInt64("service.comment.index.remove_interval"))
+	removeInterval := time.Second * time.Duration(viper.GetInt64("service.comment.index.remove_interval"))
 	expireTime := time.Second * time.Duration(viper.GetInt64("service.comment.index.expire_time"))
 	pattern := redis.KeyCommentIndexZSetPF + "*"
 
-	removeLogicalExpiredKeysHelper(wg, waitTime, expireTime, pattern)
+	removeLogicalExpiredKeysHelper(wg, removeInterval, expireTime, pattern)
 }
 
 func RemoveCommentContentFromRedis(wg *sync.WaitGroup) {
-	waitTime := time.Second * time.Duration(viper.GetInt64("service.comment.content.remove_interval"))
+	removeInterval := time.Second * time.Duration(viper.GetInt64("service.comment.content.remove_interval"))
 	expireTime := time.Second * time.Duration(viper.GetInt64("service.comment.content.expire_time"))
 	pattern := redis.KeyCommentContentStringPF + "*"
 
-	removeLogicalExpiredKeysHelper(wg, waitTime, expireTime, pattern)
+	removeLogicalExpiredKeysHelper(wg, removeInterval, expireTime, pattern)
 }
 
-func removeLogicalExpiredKeysHelper(wg *sync.WaitGroup, waitTime, logicalExpireTime time.Duration, pattern string) {
+func removeLogicalExpiredKeysHelper(wg *sync.WaitGroup, removeInterval, logicalExpireTime time.Duration, pattern string) {
+	waitTime := 0 * time.Second
 	go func() {
 		for {
 			time.Sleep(waitTime)
@@ -236,6 +246,7 @@ func removeLogicalExpiredKeysHelper(wg *sync.WaitGroup, waitTime, logicalExpireT
 				}
 			}
 			if len(expiredKeys) == 0 { // 不需要删除
+				waitTime = removeInterval
 				wg.Done()
 				continue
 			}
@@ -246,6 +257,7 @@ func removeLogicalExpiredKeysHelper(wg *sync.WaitGroup, waitTime, logicalExpireT
 			}
 
 			logger.Infof("workers:removeLogicalExpiredKeysHelper: Removed %d expired keys(%v) from redis", len(expiredKeys), pattern)
+			waitTime = removeInterval
 			wg.Done()
 		}
 	}()

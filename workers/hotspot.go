@@ -22,15 +22,17 @@ import (
 // 刷新热点帖子
 func RefreshPostHotSpot(wg *sync.WaitGroup) {
 	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_spot.refresh_time"))
+	waitTime := 0 * time.Second
 	size := viper.GetInt64("service.hot_spot.size_for_post")
 
 	go func() {
 		for {
+			time.Sleep(waitTime)
 			wg.Add(1)
 
 			// 从 redis 中获取前 size 条 view 的帖子 id
 			postIDs, _, err := redis.GetPostIDs(1, size, "views")
-			if !checkError(err, &refreshTime, wg) {
+			if !checkError(err, &waitTime, wg) {
 				continue
 			}
 
@@ -53,28 +55,30 @@ func RefreshPostHotSpot(wg *sync.WaitGroup) {
 			// for _, v := range all {
 			// 	logger.("localcache: %v", v)
 			// }
+			waitTime = refreshTime
 			wg.Done()
-			time.Sleep(refreshTime)
 		}
 	}()
 }
 
 func RefreshCommentHotSpot(wg *sync.WaitGroup)  {
 	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_spot.refresh_time"))
+	waitTime := 0 * time.Second
 	size := viper.GetInt64("service.hot_spot.size_for_comment")
 	go func() {
 		root:
 		for {
+			time.Sleep(waitTime)
 			wg.Add(1)
 
 			// 获取要缓存的根评论 id
 			commentIDStrs, err := redis.GetZSetMembersRangeByIndex(redis.KeyCommentViewZset, 0, size, true)
-			if !checkError(err, &refreshTime, wg) {
+			if !checkError(err, &waitTime, wg) {
 				continue
 			}
 			if len(commentIDStrs) == 0 {
+				waitTime = refreshTime
 				wg.Done()
-				time.Sleep(refreshTime)
 				continue
 			}
 
@@ -82,7 +86,7 @@ func RefreshCommentHotSpot(wg *sync.WaitGroup)  {
 			commentIDs := make([]int64, len(commentIDStrs))
 			for idx, commentIDStr := range commentIDStrs {
 				commentIDs[idx], err = strconv.ParseInt(commentIDStr, 10, 64)
-				if !checkError(err, &refreshTime, wg) {
+				if !checkError(err, &waitTime, wg) {
 					continue root
 				}
 			}
@@ -92,13 +96,13 @@ func RefreshCommentHotSpot(wg *sync.WaitGroup)  {
 			})
 			rootCommentDTOs, err := logic.GetCommentDetailByCommentIDs(true, false, commentIDs)
 
-			if !checkError(err, &refreshTime, wg) {
+			if !checkError(err, &waitTime, wg) {
 				continue
 			}
 
 			// 获取 replies
 			replies, err := logic.GetCommentDetailByCommentIDs(false, false, commentIDs)
-			if !checkError(err, &refreshTime, wg) {
+			if !checkError(err, &waitTime, wg) {
 				continue
 			}
 
@@ -145,19 +149,21 @@ func RefreshCommentHotSpot(wg *sync.WaitGroup)  {
 				}
 			}
 
+			waitTime = refreshTime
 			wg.Done()
-			time.Sleep(refreshTime)
 		}
 	}()
 }
 
 func RemoveExpiredObjectView(wg *sync.WaitGroup) {
-	waitTime := time.Second * time.Duration(viper.GetInt64("service.hot_spot.refresh_time"))
+	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_spot.refresh_time"))
+	waitTime := 0 * time.Second
 	timeInterval := viper.GetInt64("service.hot_spot.time_interval")
 
 	go func() {
 		root:
 		for {
+			time.Sleep(waitTime)
 			wg.Add(1)
 
 			// 从 bluebell:views 中获取过期的 view 的 otype_oid
@@ -194,8 +200,8 @@ func RemoveExpiredObjectView(wg *sync.WaitGroup) {
 				redis.ZSetRem(redis.KeyViewCreatedTimeZSet, expiredMember)
 			}
 
+			waitTime = refreshTime
 			wg.Done()
-			time.Sleep(waitTime)
 		}
 	}()
 }

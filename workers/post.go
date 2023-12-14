@@ -17,7 +17,8 @@ import (
 
 func PersistencePostScore(wg *sync.WaitGroup) {
 	// 每 waitTime 检查一次，业务体量越小，检查时间可以越长
-	waitTime := time.Second * time.Duration(viper.GetInt64("service.post.persistence_interval"))
+	persistenceInterval := time.Second * time.Duration(viper.GetInt64("service.post.persistence_interval"))
+	waitTime := 0 * time.Second
 
 	go func() {
 		for {
@@ -28,6 +29,7 @@ func PersistencePostScore(wg *sync.WaitGroup) {
 			// 从 redis 中获取过期帖子的 ID，存放到一个切片中
 			postIDs, err := redis.GetExpiredPostID(targetTimeStamp)
 			if len(postIDs) == 0 { // 避免后续操作
+				waitTime = persistenceInterval
 				wg.Done()
 				continue
 			}
@@ -107,7 +109,7 @@ func PersistencePostScore(wg *sync.WaitGroup) {
 			}
 			logger.Infof("Removed %d pieces of expired data from Redis", len(postIDs))
 
-			waitTime = time.Second * time.Duration(viper.GetInt64("service.post.persistence_interval"))
+			waitTime = persistenceInterval
 			wg.Done()
 		}
 	}()
@@ -117,26 +119,28 @@ func PersistencePostScore(wg *sync.WaitGroup) {
 
 func RefreshHotPost(wg *sync.WaitGroup)  {
 	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_post_list.refresh_time"))
+	waitTime := 0 * time.Second
 	size := viper.GetInt64("service.hot_post_list.size")
-
+	
 	go func() {
 		for {
+			time.Sleep(waitTime)
 			wg.Add(1)
 			
 			postID, _, err := redis.GetPostIDs(1, size, "score")
-			if !checkError(err, &refreshTime, wg)  {
+			if !checkError(err, &waitTime, wg)  {
 				continue
 			}
 
 			hotPosts, err := logic.GetPostListByIDs(postID)
-			if !checkError(err, &refreshTime, wg)  {
+			if !checkError(err, &waitTime, wg)  {
 				continue
 			}
 
 			localcache.GetLocalCache().Set("hotposts", hotPosts)
 			logger.Infof("Refreshed hot post list")
+			waitTime = refreshTime
 			wg.Done()
-			time.Sleep(refreshTime)
 		}
 	}()
 }
