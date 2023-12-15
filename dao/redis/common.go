@@ -33,11 +33,6 @@ const (
 	KeyCommentUserLikeIDsPF   = "bluebell:comment:userlikeids:" // param uid_oid_otype, member: comment_id
 	KeyCommentUserHateIDsPF   = "bluebell:comment:userhateids:" // param uid_oid_otype, member: comment_id
 	KeyCommentRemCidSet       = "bluebell:comment:rem:cid"      // member: comment_id
-
-	// other
-	KeyViewCreatedTimeZSet = "bluebell:view:create_time" // field: otype_otype, value: created_time(int64)
-	KeyPostViewsZset       = "bluebell:view:post"        // member: post_id, score: views
-	KeyCommentViewZset     = "bluebell:view:comment"     // member: comment_id, score: views
 )
 
 var Nil = redis.Nil
@@ -190,7 +185,7 @@ func ZSetAdd(key, member string, score float64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
-	cmd := rdb.ZAdd(ctx, KeyViewCreatedTimeZSet, redis.Z{
+	cmd := rdb.ZAdd(ctx, key, redis.Z{
 		Member: member,
 		Score:  score,
 	})

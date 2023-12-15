@@ -308,7 +308,6 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, false)
 	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, true)
 	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, false)
-	redis.ZSetRem(redis.KeyCommentViewZset, params.CommentID)
 
 	// 删本地缓存
 	cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, params.CommentID)
@@ -450,16 +449,15 @@ func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64)
 			commentIDStr := strconv.FormatInt(commentID, 10)
 			// 递增 view
 			if needIncrView {
-				isNewMember, err := redis.ZSetIncrBy(redis.KeyCommentViewZset, commentIDStr, 1)
+				isNewMember, err := localcache.IncrView(objects.ObjComment, commentID, 1)
 				if err != nil {
-					logger.Warnf("logic:getCommentDetailByCommentIDs: ZSetIncrBy failed(incr comment view)")
+					logger.Warnf("logic:getCommentDetailByCommentIDs: IncrView failed(incr comment view)")
 				} else if isNewMember {
-					member := fmt.Sprintf("%v_%v", objects.ObjComment, commentID)
-					if err := redis.ZSetAdd(redis.KeyViewCreatedTimeZSet, member, float64(time.Now().Unix())); err != nil {
-						logger.Warnf("logic:GetPostDetailByID: SetPostViewCreateTime failed")
+					if err := localcache.SetViewCreateTime(objects.ObjComment, commentID, time.Now().Unix()); err != nil {
+						logger.Warnf("logic:GetPostDetailByID: SetViewCreateTime(comment) failed")
 						// 应该保证事务一致性原则（回滚 incr 操作）
 						// 这里简单处理，不考虑回滚失败
-						redis.ZSetIncrBy(redis.KeyCommentViewZset, commentIDStr, -1)
+						localcache.IncrView(objects.ObjComment, commentID, -1)
 					}
 				}
 			}
@@ -545,7 +543,7 @@ func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64)
 		for i := 0; i < len(commentDTOList); i++ {
 			if commentDTOList[i].CommentID == -1 { 
 				if j >= len(missCommentDTOList) {
-					logger.Warnf("logic:GetCommentDetailByCommentIDs: len(missCommentDTOList) invalid, check %v", redis.KeyCommentViewZset)
+					logger.Warnf("logic:GetCommentDetailByCommentIDs: len(missCommentDTOList) invalid, check if has expired comment_id in local cache(view)")
 					break
 				}
 				commentDTOList[i] = missCommentDTOList[j]

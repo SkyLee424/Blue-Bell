@@ -2,15 +2,11 @@ package workers
 
 import (
 	"bluebell/dao/localcache"
-	"bluebell/dao/redis"
-	bluebell "bluebell/errors"
 	"bluebell/logger"
 	"bluebell/logic"
 	"bluebell/objects"
 	"fmt"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -22,7 +18,7 @@ import (
 func RefreshPostHotSpot() {
 	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_spot.refresh_time"))
 	waitTime := 0 * time.Second
-	size := viper.GetInt64("service.hot_spot.size_for_post")
+	size := viper.GetInt("service.hot_spot.size_for_post")
 
 	go func() {
 		for {
@@ -32,14 +28,13 @@ func RefreshPostHotSpot() {
 			}
 
 			// 从 redis 中获取前 size 条 view 的帖子 id
-			postIDs, _, err := redis.GetPostIDs(1, size, "views")
+			postIDs, err := localcache.GetTopKObjectIDByViews(objects.ObjPost, size)
 			if !checkError(err, &waitTime) {
 				continue
 			}
 
 			// 获取帖子元数据
-			for _, postIDStr := range postIDs {
-				postID, _ := strconv.ParseInt(postIDStr, 10, 64)
+			for _, postID := range postIDs {
 				post, err := logic.GetPostDetailByID(postID, false)
 				if err != nil {
 					logger.Warnf("workers:RefreshPostHotSpot: GetPostDetailByID failed")
@@ -51,11 +46,6 @@ func RefreshPostHotSpot() {
 				localcache.GetLocalCache().Set(cacheKey, post)
 			}
 
-			// // for debug
-			// all := localcache.GetLocalCache().GetALL(false)
-			// for _, v := range all {
-			// 	logger.("localcache: %v", v)
-			// }
 			waitTime = refreshTime
 			markAsExit()
 		}
@@ -65,9 +55,8 @@ func RefreshPostHotSpot() {
 func RefreshCommentHotSpot()  {
 	refreshTime := time.Second * time.Duration(viper.GetInt64("service.hot_spot.refresh_time"))
 	waitTime := 0 * time.Second
-	size := viper.GetInt64("service.hot_spot.size_for_comment")
+	size := viper.GetInt("service.hot_spot.size_for_comment")
 	go func() {
-		root:
 		for {
 			time.Sleep(waitTime)
 			if checkIfExit() {
@@ -75,25 +64,19 @@ func RefreshCommentHotSpot()  {
 			}
 
 			// 获取要缓存的根评论 id
-			commentIDStrs, err := redis.GetZSetMembersRangeByIndex(redis.KeyCommentViewZset, 0, size, true)
+			commentIDs, err := localcache.GetTopKObjectIDByViews(objects.ObjComment, size)
 			if !checkError(err, &waitTime) {
 				continue
 			}
-			if len(commentIDStrs) == 0 {
+			if len(commentIDs) == 0 {
 				waitTime = refreshTime
 				markAsExit()
 				continue
 			}
 
 			// 获取 metadata
-			commentIDs := make([]int64, len(commentIDStrs))
-			for idx, commentIDStr := range commentIDStrs {
-				commentIDs[idx], err = strconv.ParseInt(commentIDStr, 10, 64)
-				if !checkError(err, &waitTime) {
-					continue root
-				}
-			}
-			// 注意，由于是在 bluebell:view:comment 获取的 commentID，需要按照升序排序，才能保证数据的一致性（读 db 时，返回顺序是按照 commentID 升序排的）
+			// 注意，由于是在 local cache 获取的 commentID，需要按照 created_time（实际上就是 comment_id，雪花算法生成的） 升序排序
+			// 才能保证数据的一致性（读 db 时，返回顺序是按照 commentID 升序排的）
 			sort.Slice(commentIDs, func(i, j int) bool {
 				return commentIDs[i] < commentIDs[j]
 			})
@@ -164,7 +147,6 @@ func RemoveExpiredObjectView() {
 	timeInterval := viper.GetInt64("service.hot_spot.time_interval")
 
 	go func() {
-		root:
 		for {
 			time.Sleep(waitTime)
 			if checkIfExit() {
@@ -173,37 +155,7 @@ func RemoveExpiredObjectView() {
 
 			// 从 bluebell:views 中获取过期的 view 的 otype_oid
 			targetTimeStamp := time.Now().Unix() - timeInterval
-			expiredMembers, err := redis.GetZSetMembersRangeByScore(redis.KeyViewCreatedTimeZSet, "0", fmt.Sprintf("%v", targetTimeStamp))
-			if !checkError(err, &waitTime) {
-				continue
-			}
-
-			for _, expiredMember := range expiredMembers {
-				tmp := strings.Split(expiredMember, "_")
-				if len(tmp) != 2 { // 检查一下长度
-					checkError(bluebell.ErrInternal, &waitTime)
-					continue root
-				}
-				objType, err := strconv.ParseInt(tmp[0], 10, 64)
-				if !checkError(err, &waitTime) {
-					continue root
-				}
-				objID, err := strconv.ParseInt(tmp[1], 10, 64)
-				if !checkError(err, &waitTime) {
-					continue root
-				}
-
-				var remKey string
-				switch objType {
-				case objects.ObjPost:
-					remKey = redis.KeyPostViewsZset
-				case objects.ObjComment:
-					remKey = redis.KeyCommentViewZset
-				}
-
-				redis.ZSetRem(remKey, objID)
-				redis.ZSetRem(redis.KeyViewCreatedTimeZSet, expiredMember)
-			}
+			localcache.RemoveExpiredObjectView(targetTimeStamp)
 
 			waitTime = refreshTime
 			markAsExit()
