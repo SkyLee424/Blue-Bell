@@ -24,6 +24,7 @@ const (
 	CodeVoteTimeExpire
 
 	CodeForbidden
+	CodeTimeOut
 )
 
 var codeMsgMap = map[Code]string{
@@ -48,6 +49,7 @@ var codeMsgMap = map[Code]string{
 	CodeVoteTimeExpire: "超过投票时间",
 
 	CodeForbidden: "禁止访问",
+	CodeTimeOut: "请求超时",
 }
 
 func (c Code) getMsg() string {

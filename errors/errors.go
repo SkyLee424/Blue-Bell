@@ -14,6 +14,7 @@ var (
 	ErrExpiredToken = errors.New("过期的 Token")
 	ErrNotFound     = errors.New("未找到")
 	ErrInternal     = errors.New("内部错误")
+	ErrTimeout      = errors.New("请求超时")
 
 	// community
 	ErrNoSuchCommunity = errors.New("没有该社区")
