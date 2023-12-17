@@ -13,6 +13,7 @@ import (
 	"bluebell/models"
 	"bluebell/objects"
 	"fmt"
+	"strings"
 
 	"strconv"
 	"time"
@@ -26,6 +27,9 @@ import (
 
 var hotpostGrp singleflight.Group
 var postDetailGrp singleflight.Group
+var postIDsGrp singleflight.Group
+var postListGrp singleflight.Group
+var postVoteNumGrp singleflight.Group
 
 func CreatePost(post *models.Post) error {
 	// mysql 持久化
@@ -197,18 +201,31 @@ func GetAllPostList(params *models.ParamPostList) ([]*models.PostDTO, int, error
 }
 
 func GetPostListByKeyword2(params *models.ParamPostListByKeyword) ([]*models.PostDTO, int, error) {
-	postIDs := make([]string, 0)
-	var err error
-	var total int
+	sfkey := fmt.Sprintf("%v_%v_%v_%v", params.Keyword, params.OrderBy, params.PageNum, params.PageSize)
+	timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
+	rps := viper.GetInt("service.rps")
+	interval := time.Second / time.Duration(rps)
 
-	if params.OrderBy == "time" {
-		postIDs, total, err = elasticsearch.GetPostIDsByKeywordOrderByTime(params)
-	} else if params.OrderBy == "correlation" {
-		postIDs, total, err = elasticsearch.GetPostIDsByKeywordOrderByCorrelation(params)
-	}
+	ret, err := utils.SfDoWithTimeout(&postIDsGrp, sfkey, timeout, interval, func() (any, error) {
+		var postIDs []string
+		var err error
+		total := 0
+		if params.OrderBy == "time" {
+			postIDs, total, err = elasticsearch.GetPostIDsByKeywordOrderByTime(params)
+		} else if params.OrderBy == "correlation" {
+			postIDs, total, err = elasticsearch.GetPostIDsByKeywordOrderByCorrelation(params)
+		}
+		return ReturnValueFromElasticsearch{
+			PostIDs: postIDs,
+			Total: total,
+		}, err
+	})
+
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "logic:GetPostListByKeyword2:elasticsearch")
 	}
+	postIDs := ret.(ReturnValueFromElasticsearch).PostIDs
+	total := ret.(ReturnValueFromElasticsearch).Total
 
 	list, err := GetPostListByIDs(postIDs)
 	return list, total, err
@@ -230,10 +247,21 @@ func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
 
 	// 在 mysql 中查询缓存未命中的 post list
 	if len(missPostIDs) != 0 {
-		missPostList, err := mysql.SelectPostListByPostIDs(missPostIDs)
+		sfkey := strings.Join(missPostIDs, "_")
+		timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
+		rps := viper.GetInt("service.rps")
+		interval := time.Second / time.Duration(rps)
+
+		_missPostList, err := utils.SfDoWithTimeout(&postListGrp, sfkey, timeout, interval, func() (any, error) {
+			return mysql.SelectPostListByPostIDs(missPostIDs)
+		})
+
+		// missPostList, err := mysql.SelectPostListByPostIDs(missPostIDs)
 		if err != nil {
 			return nil, errors.Wrap(err, "get post list from mysql")
 		}
+		missPostList := _missPostList.([]*models.PostDTO)
+
 		// 组装数据
 		idx := 0
 		for i := 0; i < len(list); i++ {
@@ -256,10 +284,19 @@ func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
 	voteNumsFromMySQL := make([]int64, 0)
 	var err error
 	if len(expiredPostIDs) != 0 {
-		voteNumsFromMySQL, err = mysql.SelectPostVoteNumsByIDs(expiredPostIDs)
+		sfkey := strings.Join(expiredPostIDs, "_")
+		timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
+		rps := viper.GetInt("service.rps")
+		interval := time.Second / time.Duration(rps)
+
+		_voteNumsFromMySQL, err := utils.SfDoWithTimeout(&postVoteNumGrp, sfkey, timeout, interval, func() (any, error) {
+			return mysql.SelectPostVoteNumsByIDs(expiredPostIDs)
+		})
+		// voteNumsFromMySQL, err = mysql.SelectPostVoteNumsByIDs(expiredPostIDs)
 		if err != nil {
 			return nil, err
 		}
+		voteNumsFromMySQL = _voteNumsFromMySQL.([]int64)
 	}
 
 	// 在 redis 中查询每个 post 的投票数（如果帖子过期，查询仍会成功，且 votenum 为 0）
@@ -306,4 +343,9 @@ func GetHotPostList() ([]*models.PostDTO, error) {
 	}
 
 	return posts.([]*models.PostDTO), nil
+}
+
+type ReturnValueFromElasticsearch struct {
+	Total   int
+	PostIDs []string
 }
