@@ -108,6 +108,8 @@ func PostDetailHandler(ctx *gin.Context) {
 	if err != nil {
 		if errors.Is(err, bluebell.ErrNoSuchPost) {
 			common.ResponseError(ctx, common.CodeNoSuchPost)
+		} else if errors.Is(err, bluebell.ErrTimeout) {
+			common.ResponseError(ctx, common.CodeTimeOut)
 		} else {
 			common.ResponseError(ctx, common.CodeInternalErr)
 			// 打日志
@@ -304,6 +306,10 @@ func PostSearchHandler2(ctx *gin.Context) {
 func PostHotController(ctx *gin.Context) {
 	list, err := logic.GetHotPostList()
 	if err != nil {
+		if errors.Is(err, bluebell.ErrTimeout) {
+			common.ResponseError(ctx, common.CodeTimeOut)	
+			return
+		}
 		common.ResponseError(ctx, common.CodeInternalErr)
 		logger.ErrorWithStack(err)
 		return

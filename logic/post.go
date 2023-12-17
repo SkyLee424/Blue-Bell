@@ -13,13 +13,19 @@ import (
 	"bluebell/models"
 	"bluebell/objects"
 	"fmt"
+
 	"strconv"
 	"time"
+
+	"golang.org/x/sync/singleflight"
 
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 	"gorm.io/gorm"
 )
+
+var hotpostGrp singleflight.Group
+var postDetailGrp singleflight.Group
 
 func CreatePost(post *models.Post) error {
 	// mysql 持久化
@@ -64,15 +70,22 @@ func GetPostDetailByID(id int64, needIncrView bool) (detail *models.PostDTO, err
 		return postCache.(*models.PostDTO), nil
 	}
 
-	detail, err = mysql.SelectPostDetailByID(id)
+	idStr := strconv.FormatInt(id, 10)
+
+	timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
+	rps := viper.GetInt("service.rps")
+	interval := time.Second / time.Duration(rps)
+	_detail, err := utils.SfDoWithTimeout(&postDetailGrp, idStr, timeout, interval, func() (any, error) {
+		return mysql.SelectPostDetailByID(id)
+	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, bluebell.ErrNoSuchPost
 		}
-		return nil, err
+		return nil, errors.Wrap(err, "logic:GetPostDetailByID: SelectPostDetailByID")
 	}
-
-	detail.VoteNum, err = redis.GetPostVoteNum(strconv.FormatInt(id, 10))
+	detail = _detail.(*models.PostDTO)
+	detail.VoteNum, err = redis.GetPostVoteNum(idStr)
 
 	return detail, err
 }
@@ -278,8 +291,18 @@ func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
 func GetHotPostList() ([]*models.PostDTO, error) {
 	posts, err := localcache.GetLocalCache().Get("hotposts")
 	if err != nil { // cache miss
-		// 热榜访问次数一定很高，如果 cache miss，需要立即重建
-		return rebuild.RebuildPostHotList()
+		timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
+		rps := viper.GetInt("service.rps")
+		interval := time.Second / time.Duration(rps)
+
+		res, err := utils.SfDoWithTimeout(&hotpostGrp, "hotpost", time.Duration(timeout), interval, func() (any, error) {
+			// 热榜访问次数一定很高，如果 cache miss，需要立即重建
+			return rebuild.RebuildPostHotList()
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "logic:GetHotPostList: RebuildPostHotList")
+		}
+		return res.([]*models.PostDTO), nil
 	}
 
 	return posts.([]*models.PostDTO), nil
