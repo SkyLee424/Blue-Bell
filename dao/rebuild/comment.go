@@ -26,16 +26,15 @@ func RebuildCommentLikeOrHateSet(commentID, userID, objID int64, objType int8, l
 	return exist, nil
 }
 
-// 返回参数：commentID、是否重建、错误
 // 如果成功重建，返回 otype_oid 下的所有 comment_id（可以直接使用这个 comment_ids，避免再读一次缓存）
-func RebuildCommentIndex(objType int8, objId, root int64) ([]int64, bool, error) {
+func RebuildCommentIndex(objType int8, objId, root int64) ([]int64, error) {
 	key := fmt.Sprintf("%v%v_%v", redis.KeyCommentIndexZSetPF, objType, objId)
 	exist, err := redis.Exists(key)
 	if err != nil {
-		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentIndex: Exists")
+		return nil, errors.Wrap(err, "rebuild:RebuildCommentIndex: Exists")
 	}
 	if exist { // 不需要重建
-		return nil, false, nil
+		return nil, nil
 	}
 
 	var commentIDs []int64
@@ -45,26 +44,27 @@ func RebuildCommentIndex(objType int8, objId, root int64) ([]int64, bool, error)
 		commentIDs, err = mysql.SelectSubCommentIDs(nil, root)
 	}
 	if err != nil {
-		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentIndex: SelectSubCommentIDs")
+		return nil, errors.Wrap(err, "rebuild:RebuildCommentIndex: SelectSubCommentIDs")
 	}
 	if len(commentIDs) == 0 { // 该主题下没有评论
-		return nil, true, nil
+		return nil, nil
 	}
 
 	floors, err := mysql.SelectFloorsByCommentIDs(nil, commentIDs)
 	if err != nil {
-		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentIndex: SelectFloorsByCommentIDs")
+		return nil, errors.Wrap(err, "rebuild:RebuildCommentIndex: SelectFloorsByCommentIDs")
 	}
 	err = redis.AddCommentIndexMembers(objType, objId, commentIDs, floors)
 	if err != nil {
-		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentIndex: AddCommentIndexMembers")
+		return nil, errors.Wrap(err, "rebuild:RebuildCommentIndex: AddCommentIndexMembers")
 	}
 
 	logger.Infof("rebuild:RebuildCommentIndex: Rebuild 1 data from mysql to redis")
-	return commentIDs, true, nil
+	return commentIDs, nil
 }
 
 func RebuildCommentContent(commentIDs []int64) error {
+	logger.Debugf("Called RebuildCommentContent")
 	keys := make([]string, len(commentIDs))
 	for i := 0; i < len(commentIDs); i++ {
 		keys[i] = fmt.Sprintf("%v%v", redis.KeyCommentContentStringPF, commentIDs[i])
@@ -145,6 +145,7 @@ func RebuildCommentUserLikeOrHateMapping(userID, objID int64, objType int8, like
 		return nil, false, errors.Wrap(bluebell.ErrInternal, "rebuild:RebuildCommentUserLikeOrHateMapping: list and exists' length not equal")
 	}
 	res := make([]int64, 0, len(list))
+	res = append(res, -1) // 添加一个冗余数据到 redis，防止缓存穿透
 	for idx, commentID := range list {
 		if !exists[idx] {
 			res = append(res, commentID)

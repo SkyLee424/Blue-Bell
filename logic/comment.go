@@ -13,11 +13,18 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/spf13/viper"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
+
+var CommentIndexGrp singleflight.Group
+var CommentContentGrp singleflight.Group
+var CommentMetaDataGrp singleflight.Group
 
 func CreateComment(param *models.ParamCommentCreate, userID int64) (*models.CommentDTO, error) {
 	commentID := utils.GenSnowflakeID()
@@ -127,7 +134,7 @@ func CreateComment(param *models.ParamCommentCreate, userID int64) (*models.Comm
 
 	// 写缓存
 	if index.Root == 0 {
-		_, _, err = rebuild.RebuildCommentIndex(index.ObjType, index.ObjID, 0) // 在写缓存前尝试 rebuild 一下，确保缓存中有完整的 comment_id
+		_, err = rebuild.RebuildCommentIndex(index.ObjType, index.ObjID, 0) // 在写缓存前尝试 rebuild 一下，确保缓存中有完整的 comment_id
 		if err != nil {
 			// 重建失败，如果继续写缓存，可能会造成缓存中不具有完整的 comment_id，拒绝服务
 			return nil, errors.Wrap(err, "logic:CreateComment: RebuildCommentIndex")
@@ -139,7 +146,7 @@ func CreateComment(param *models.ParamCommentCreate, userID int64) (*models.Comm
 		cacheKey := fmt.Sprintf("%v_%v_replies", objects.ObjComment, index.Root)
 		replyIDs, err := localcache.GetLocalCache().Get(cacheKey)
 		if err == nil { // cache hit，need update
-			tmp := replyIDs.([]int64)			
+			tmp := replyIDs.([]int64)
 			tmp = append(tmp, commentID)
 			localcache.GetLocalCache().Set(cacheKey, tmp)
 			cacheKey = fmt.Sprintf("%v_%v_replies", objects.ObjComment, commentID)
@@ -442,7 +449,7 @@ func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserL
 func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64) ([]models.CommentDTO, error) {
 	var commentDTOList []models.CommentDTO
 	missCommentIDs := make([]int64, 0, len(commentIDs))
-	if isRoot { 
+	if isRoot {
 		commentDTOList = make([]models.CommentDTO, len(commentIDs))
 		// 调用者要求查询 commentIDs 对应的 metadata
 		for idx, commentID := range commentIDs {
@@ -461,14 +468,14 @@ func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64)
 					}
 				}
 			}
-			
+
 			// 查 local cache，获取 metadata
 			cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, commentIDStr) // 用于获取 local cache 的 key
 			commentDTO, err := localcache.GetLocalCache().Get(cacheKey)
 			if err == nil { // cache hit
 				commentDTOList[idx] = commentDTO.(models.CommentDTO)
 			} else { // cache miss
-				commentDTOList[idx].CommentID = -1;
+				commentDTOList[idx].CommentID = -1
 				missCommentIDs = append(missCommentIDs, commentID)
 			}
 		}
@@ -477,7 +484,7 @@ func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64)
 		// 调用者要求查询 commentIDs 的子评论列表
 		for _, commentID := range commentIDs {
 			cacheKey := fmt.Sprintf("%v_%v_replies", objects.ObjComment, commentID)
-			
+
 			replyList, err := localcache.GetLocalCache().Get(cacheKey)
 			if err == nil { // cache hit
 				// 在 local cache 中获取子评论的 metadata
@@ -504,14 +511,22 @@ func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64)
 	if !isRoot {
 		field = "root"
 	}
-	// commentDTOList, err := mysql.SelectCommentMetaDataByCommentIDs(nil, field, commentIDs)
-	missCommentDTOList, err := mysql.SelectCommentMetaDataByCommentIDs(nil, field, missCommentIDs)
+
+	missCommentIDStrs := utils.ConvertInt64SliceToStringSlice(missCommentIDs)
+	sfkey := strings.Join(missCommentIDStrs, "_")
+	timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
+	rps := viper.GetInt("service.rps")
+	interval := time.Second / time.Duration(rps)
+	_missCommentDTOList, err := utils.SfDoWithTimeout(&CommentMetaDataGrp, sfkey, timeout, interval, func() (any, error) {
+		return mysql.SelectCommentMetaDataByCommentIDs(nil, field, missCommentIDs)
+	})
 	if err != nil {
 		return nil, errors.Wrap(err, "logic:GetCommentList: SelectCommentMetaDataByCommentIDs failed")
 	}
+	missCommentDTOList := _missCommentDTOList.([]models.CommentDTO)
 
 	// 查点赞数
-	if !isRoot {  // 子评论，需要获取子评论 id
+	if !isRoot { // 子评论，需要获取子评论 id
 		replyIDs := make([]int64, 0, len(missCommentDTOList))
 		for _, reply := range missCommentDTOList {
 			replyIDs = append(replyIDs, reply.CommentID)
@@ -541,7 +556,7 @@ func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64)
 	if isRoot {
 		j := 0
 		for i := 0; i < len(commentDTOList); i++ {
-			if commentDTOList[i].CommentID == -1 { 
+			if commentDTOList[i].CommentID == -1 {
 				if j >= len(missCommentDTOList) {
 					logger.Warnf("logic:GetCommentDetailByCommentIDs: len(missCommentDTOList) invalid, check if has expired comment_id in local cache(view)")
 					break
@@ -558,44 +573,43 @@ func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64)
 }
 
 func getCommentIDs(objType int8, objID int64) ([]int64, error) {
-	readDB := func(err error) ([]int64, error) {
-		logger.Warnf("logic:GetCommentList: RebuildCommentIndex failed, reason: %v", err.Error())
-		return mysql.SelectRootCommentIDs(nil, objType, objID)
+	key := fmt.Sprintf("%v%v_%v", redis.KeyCommentIndexZSetPF, objType, objID)
+	exist, err := redis.Exists(key)
+	if err != nil {
+		return nil, errors.Wrap(err, "logic:getCommentIDs: Exists")
 	}
 
-	// 先 rebuild 一下，防止 cache miss
-	commentIDs, rebuilt, err := rebuild.RebuildCommentIndex(objType, objID, 0)
-	if err != nil { // 重建失败，尝试从 mysql 获取数据
-		return readDB(err)
-	} else if !rebuilt { // 没有重建，需要读缓存
-		commentIDs, err = redis.GetCommentIndexMember(objType, objID)
-		if err != nil { // 读缓存失败，尝试从 mysql 获取数据
-			return readDB(err)
+	if exist { // cache hit
+		return redis.GetCommentIndexMember(objType, objID)
+	} else { // cache miss, rebuild
+		key = fmt.Sprintf("%v_%v", objType, objID)
+		timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
+		rps := viper.GetInt("service.rps")
+		interval := time.Second / time.Duration(rps)
+
+		commentIDs, err := utils.SfDoWithTimeout(&CommentIndexGrp, key, timeout, interval, func() (any, error) {
+			return rebuild.RebuildCommentIndex(objType, objID, 0)
+		})
+		if err != nil {
+			return nil, errors.Wrap(err, "logic:getCommentIDs: RebuildCommentIndex")
 		}
-		return commentIDs, nil
-	} else { // 重建，并且成功，直接使用重建时从 db 获取的数据，避免再多查一次缓存
-		return commentIDs, nil
+		return commentIDs.([]int64), nil
 	}
 }
 
 func getCommentContent(commentIDs []int64) ([]string, error) {
-	readDB := func(err error) ([]string, error) {
-		logger.Warnf("logic:GetCommentList: RebuildCommentContent failed, reason: %v", err.Error())
-		tmp, err := mysql.SelectCommentContentByCommentIDs(nil, commentIDs)
-		if err != nil { // 读 db 失败，拒绝服务
-			return nil, errors.Wrap(err, "logic:GetCommentList: SelectCommentContentByCommentIDs failed")
-		}
-		contents := make([]string, len(tmp))
-		for i := 0; i < len(tmp); i++ {
-			contents[i] = tmp[i].Message
-		}
-		return contents, nil
-	}
+	commentIDStrs := utils.ConvertInt64SliceToStringSlice(commentIDs)
 
-	// cache rebuild 一下
-	err := rebuild.RebuildCommentContent(commentIDs)
-	if err != nil { // rebuild 失败，读 db
-		return readDB(err)
+	sfkey := strings.Join(commentIDStrs, "_")
+	timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
+	rps := viper.GetInt("service.rps")
+	interval := time.Second / time.Duration(rps)
+
+	_, err := utils.SfDoWithTimeout(&CommentContentGrp, sfkey, timeout, interval, func() (any, error) {
+		return nil, rebuild.RebuildCommentContent(commentIDs)
+	})
+	if err != nil {
+		return nil, errors.Wrap(err, "logic:getCommentContent: RebuildCommentContent")
 	}
 
 	// rebuild 成功（或者不需要 rebuild），读缓存
