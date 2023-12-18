@@ -321,6 +321,7 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 	localcache.GetLocalCache().Remove(cacheKey)
 	cacheKey = fmt.Sprintf("%v_%v_replies", objects.ObjComment, params.CommentID)
 	localcache.GetLocalCache().Remove(cacheKey)
+	localcache.RemoveObjectView(objects.ObjComment, params.CommentID)
 
 	return nil
 }

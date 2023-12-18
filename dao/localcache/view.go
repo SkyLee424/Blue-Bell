@@ -76,6 +76,11 @@ func GetTopKObjectIDByViews(objType int, k int) ([]int64, error) {
 	return res, nil
 }
 
+func RemoveObjectView(objType int, objID int64) bool {
+	cacheKey := getCacheKey(objType, objID)
+	return viewCache.Remove(cacheKey)
+}
+
 func RemoveExpiredObjectView(targetTimeStamp int64) {
 	all := createTimeCache.GetALL(false)
 	for k, v := range all {

@@ -64,7 +64,6 @@ func RebuildCommentIndex(objType int8, objId, root int64) ([]int64, error) {
 }
 
 func RebuildCommentContent(commentIDs []int64) error {
-	logger.Debugf("Called RebuildCommentContent")
 	keys := make([]string, len(commentIDs))
 	for i := 0; i < len(commentIDs); i++ {
 		keys[i] = fmt.Sprintf("%v%v", redis.KeyCommentContentStringPF, commentIDs[i])
