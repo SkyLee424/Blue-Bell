@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pkg/errors"
@@ -326,7 +327,48 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 	return nil
 }
 
+
+var (
+    commentCache = make(map[string]*sync.Mutex)
+    cacheMutex    sync.Mutex
+)
+
+// 针对每个 uid_cid_oid_otype 有一个锁
+func getCommentMutex(uid_cid_oid_otype string) *sync.Mutex {
+    cacheMutex.Lock()
+    defer cacheMutex.Unlock()
+
+    mutex, exists := commentCache[uid_cid_oid_otype]
+    if !exists {
+        mutex = &sync.Mutex{}
+        commentCache[uid_cid_oid_otype] = mutex
+    }
+
+	mutex.Lock() // 上了锁以后再给调用者
+    return mutex
+}
+
+// 在不需要锁的时候释放，避免内存泄漏
+func deleteCommentMutex(uid_cid_oid_otype string) {
+	cacheMutex.Lock()
+    defer cacheMutex.Unlock()
+
+	mutex, exist := commentCache[uid_cid_oid_otype]
+	if !exist {
+		return
+	}
+	mutex.Lock() // 确保此时已经没有 goroutine 持有该锁，否则针对相同的评论，会有不同的 goroutine 拿到不同的锁，起不到效果
+	defer mutex.Unlock()
+	delete(commentCache, uid_cid_oid_otype)
+}
+
 func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like bool) error {
+	key := fmt.Sprintf("%d_%d_%d_%d", userID, commentID, objID, objType)
+	mutex := getCommentMutex(key) // 保证拿到的 mutex 已经是上锁状态
+	// mutex.Lock()				  // 不要在这里上锁，如果在这里上锁，发生调度，调度到 deleteCommentMutex，将该锁删除，仍可能让后续 goroutine 获取到不同的锁
+	defer deleteCommentMutex(key)
+	defer mutex.Unlock()		  // 先释放锁，再 deleteCommentMutex，不然死锁
+
 	// 判断该用户是否点赞（踩）过
 	pre, err := redis.CheckCommentLikeOrHateIfExistUser(commentID, userID, objID, objType, like)
 	if err != nil {
