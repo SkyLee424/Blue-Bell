@@ -29,6 +29,11 @@ func Auth() gin.HandlerFunc {
 			ctx.Abort()
 			return
 		}
+		if parts[1] == "null" {
+			controller.ResponseError(ctx, controller.CodeInvalidToken)
+			ctx.Abort()
+			return
+		}
 
 		// 检验 token
 		UserID, err := utils.ParseToken(parts[1])

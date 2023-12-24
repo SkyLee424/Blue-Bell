@@ -15,12 +15,12 @@ import (
 // RefreshTokenHandler 刷新 access_token 接口
 //
 //	@Summary		刷新 access_token 接口
-//	@Description	根据 Bearer Authorization 中携带的 refresh_token，刷新 access_token
+//	@Description	根据 Bearer Authorization 中携带的 access_token，刷新 refresh_token
 //	@Tags			Token 相关接口
 //	@Accept			application/json
 //	@Produce		application/json
-//	@Param			Authorization	header	string	false	"refresh_token"
-//	@Param			access_token	query	string	false	"旧的 access_token"
+//	@Param			Authorization	header	string	false	"access_token"
+//	@Param			refresh_token	query	string	false	"refresh_token"
 //	@Security		ApiKeyAuth
 //	@Success		200	{object}	common.Response{data=common.ResponseTokens}
 //	@Router			/token/refresh [get]
@@ -28,10 +28,14 @@ func RefreshTokenHandler(ctx *gin.Context) {
 	// 解析数据
 	header := ctx.Request.Header.Get("Authorization")
 	parts := strings.Split(header, " ")
-	aTokenStr := ctx.Query("access_token")
+	if len(parts) != 2 {
+		common.ResponseError(ctx, common.CodeInvalidToken)
+		return
+	}
+	refresh_token := ctx.Query("refresh_token")
 
 	// 获取新的 access_token
-	access_token, err := logic.RefreshToken(parts[1], aTokenStr)
+	access_token, err := logic.RefreshToken(refresh_token, parts[1])
 	if err != nil {
 		if errors.Is(err, bluebell.ErrExpiredToken) {
 			common.ResponseError(ctx, common.CodeExpiredLogin)
