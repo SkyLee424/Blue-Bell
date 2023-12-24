@@ -1,6 +1,7 @@
 package elasticsearch
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -14,8 +15,11 @@ var postActiveDay int64
 
 func Init() {
 	var err error
+	host := viper.Get("elasticsearch.host")
+	port := viper.GetInt("elasticsearch.port")
+	dsn := fmt.Sprintf("http://%v:%v", host, port)
 	cfg := elasticsearch.Config{
-		Addresses: []string{"http://127.0.0.1:9200"}, // 读取配置文件
+		Addresses: []string{dsn}, // 读取配置文件
 	}
 
 	// 创建客户端
