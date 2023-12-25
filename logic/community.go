@@ -28,3 +28,7 @@ func GetCommunityDetailByID(id int64) (*models.CommunityDTO, error) {
 
 	return detail, err
 }
+
+func CreateCommunity(params *models.ParamCommunityCreate) error {
+	return errors.Wrap(mysql.CreateCommunity(params.CommunityID, params.CommunityName, params.Introduction), "logic:CreateCommunity: CreateCommunity")
+}

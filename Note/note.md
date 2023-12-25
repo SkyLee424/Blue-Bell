@@ -909,3 +909,473 @@ select post_id from posts where MATCH(title) AGAINST('english'); -- success
 
 select post_id from posts where MATCH(content) AGAINST('title'); -- success
 ```
+
+## Elasticsearch
+
+寻找有没有现成的解决方案，发现了 Elasticsearch 这个工具，于是开始学习
+
+
+
+# 部署 bluebell
+
+## 使用 docker-compose 部署 bluebell 后端
+
+首先，编写 Dockerfile:
+
+```Dockerfile
+FROM golang:alpine AS builder
+
+# 为我们的镜像设置必要的环境变量
+ENV GO111MODULE=on \
+    GOPROXY=https://goproxy.cn,direct \
+    CGO_ENABLED=0 \
+    GOOS=linux \
+    GOARCH=amd64
+
+# 移动到工作目录：/build
+WORKDIR /build
+
+# 复制项目中的 go.mod 和 go.sum文件并下载依赖信息
+COPY go.mod .
+COPY go.sum .
+RUN go mod download
+
+# 将代码复制到容器中
+COPY . .
+
+# 将我们的代码编译成二进制可执行文件
+RUN go build -o bluebell .
+
+# 声明服务端口
+EXPOSE 1145
+
+
+
+# 创建一个小的镜像 #
+FROM debian:stretch-slim
+
+# 从builder镜像中把脚本拷贝到当前目录
+COPY ./wait-for.sh /
+
+# 拷贝配置文件
+COPY ./config/config.json /
+
+COPY --from=builder /build/bluebell /
+
+# 使用阿里源，将本地的 sources.list 文件复制到容器内的 /etc/apt/ 目录下
+COPY sources.list /etc/apt/sources.list
+
+RUN set -eux; \
+	apt-get update; \
+	apt-get install -y --allow-unauthenticated \
+		--no-install-recommends \
+		netcat; \
+        chmod 755 wait-for.sh
+```
+
+这里的:
+
+- wait-for 是本地的一个脚本，目的是让 bluebell 项目在 mysql 和 redis 容器启动后，再启动
+- sources.list 是本地的一个文件，保存了阿里的镜像源，加速 apt 下载
+
+然后就可以创建 bluebell 镜像了：
+
+```bash
+docker build -t bluebell .
+```
+
+有了 bluebell 镜像，就可以编写 docker-compose.yaml：
+
+```yaml
+# yaml 配置
+version: "3.7"
+services:
+  mysql8: 					# mysql 服务名称
+    image: "mysql:latest"   # mysql 镜像
+    ports:
+      - "13306:3306"		# 对外暴露 13306 端口
+    command: "--default-authentication-plugin=mysql_native_password --init-file /data/application/init.sql"
+    environment:
+      MYSQL_ROOT_PASSWORD: "root1234"
+      MYSQL_DATABASE: "bluebell"
+      MYSQL_PASSWORD: "root1234"
+    volumes:
+      - ./init.sql:/data/application/init.sql # 挂载本地的 init.sql 到容器
+  redis5:
+    image: "redis:latest"
+    ports:
+      - "16379:6379"
+  bluebell:
+    image: bluebell:latest  # 使用刚刚创建的 bluebell 镜像
+    command: sh -c "./wait-for.sh mysql8:3306 redis5:6379 -- ./bluebell -c ./config.json" # 注意配置文件的路径！
+    depends_on: 			# 依赖 mysql 和 redis 服务
+      - mysql8
+      - redis5
+    ports:
+      - "1145:1145" 		# 对外暴露 1145 端口
+
+```
+
+有了 docker-compose 配置文件，我们就可以在本地测试镜像是否 ok：
+
+```bash
+docker-compose up
+```
+
+![](2023-11-03-08-44-27.png)
+
+去 postman 测试一下接口是否正常
+
+一切正常，就可以部署到服务器了
+
+先将本地的 `bluebell` `mysql` `redis` 镜像上传到服务器：
+
+```bash
+docker save -o bluebell.tar bluebell:latest
+docker save -o mysql.tar mysql:latest
+docker save -o redis.tar redis:latest
+
+# 上传到服务器，可以使用你喜欢的方式
+```
+
+然后在服务器上，将 tar 文件导入到项目目录：
+
+```bash
+docker load -i bluebell bluebell.tar
+# ...
+```
+
+创建 docker-compose.yaml 文件，内容与之前一致
+
+创建 wait-for.sh 和 init.sql，内容与之前一致
+
+一切就绪，执行：
+
+```bash
+docker-compose up
+```
+
+就 ok 了
+
+**注意：**
+
+- 确保服务器上的镜像、compose 文件与开发环境一致！！
+
+如果执行上述命令，出现 command not found，可能是环境变量，或者服务器没有安装 docker-compose 插件导致的
+
+可以在 [这里](https://github.com/docker/compose/releases) 下载 docker-compose 插件，下载完成后，将下载目录添加到环境变量即可
+
+## 使用 nginx 托管前端项目
+
+首先下载安装 nginx，这里建议使用 yum 或者 apt 安装
+
+安装后，修改 nginx 配置文件，如果采用上述安装，在 /etc/nginx/nginx.conf 目录：
+
+```conf
+user root;
+worker_processes auto;
+pid /run/nginx.pid;
+# ...
+```
+
+只需要修改 user 为 root 就可以了
+
+当然，你也可以修改成其它的，只要保证 nginx 的启动用户是你修改的用户即可
+
+然后，在 /etc/nginx/conf.d 添加一个 bluebell.conf 配置文件：
+
+```conf
+server {
+	listen       8080; # 访问服务器的 8080 端口，即可访问 bluebell 的前端项目
+	server_name  localhost;
+
+	access_log   /var/log/bluebell-access.log;
+	error_log    /var/log/bluebell-error.log;
+
+			# 静态文件请求
+	location ~ .*\.(gif|jpg|jpeg|png|js|css|eot|ttf|woff|svg|otf)$ {
+		access_log off;
+		expires    1d;
+		root       /home/projects/bluebell/frontend;
+	}
+
+	# index.html页面请求
+	# 因为是单页面应用这里使用 try_files 处理一下，避免刷新页面时出现404的问题
+	location / {
+		root /home/projects/bluebell/frontend;
+		index index.html;
+		try_files $uri $uri/ /index.html;
+	}
+
+			# API请求
+	location /api/v1 {
+		proxy_pass                 http://127.0.0.1:1145; # 由于我们的前端和后端部署在同一台服务器，直接将请求发给当前服务器的 1145 端口
+		proxy_redirect             off;
+		proxy_set_header           Host             $host;
+		proxy_set_header           X-Real-IP        $remote_addr;
+		proxy_set_header           X-Forwarded-For  $proxy_add_x_forwarded_for;
+	}
+}
+```
+
+## 踩的坑
+
+### 找不到配置文件
+
+是因为在提供 config 时，需要加上 `-c` 选项：
+
+```bash
+./bluebell -c ./config/config.json # 正确
+./bluebell ./config/config.json    # 错误
+```
+
+~~自己写的解析，自己都忘了。。。~~
+
+### 无法访问 api 接口
+
+是因为错误的 config 配置：
+
+```json
+"server": {
+	"ip": "",
+	"port": 1145,
+	...
+}, 
+"server": {
+	"ip": "localhost",
+	"port": 1145,
+	...
+}, 
+```
+
+这两种配置，第一种是 ok 的，第二种就不行
+
+### 跨域问题
+
+由于使用的是 nginx 托管前端静态文件，在 bluebell 的配置文件中，需要修改跨域配置：
+
+```conf
+"CORF": {
+	"frontend_path": "http://ip:port"  	# ip 是你服务器的真实地址，有域名也可以填域名
+										# port 是 nginx 托管的端口，就是 bluebell.conf 中声明的监听端口
+}
+```
+
+### 请求路径配置
+
+需要保证： conf.d/bluebell.conf 和 前端的 baseURL 一致：
+
+![](2023-11-05-09-08-24.png)
+
+![](2023-11-05-09-09-19.png)
+
+### nginx 
+
+#### 启动失败
+
+启动 nginx 时，报错，查看日志：
+
+```
+[root@localhost backend]# systemctl status nginx -l
+nginx.service - The nginx HTTP and reverse proxy server
+   Loaded: loaded (/usr/lib/systemd/system/nginx.service; enabled; vendor preset: disabled)
+   Active: failed (Result: exit-code) since Fri 2023-11-03 10:30:47 CST; 1min 4s ago
+  Process: 12772 ExecStartPre=/usr/sbin/nginx -t (code=exited, status=1/FAILURE)
+  Process: 12769 ExecStartPre=/usr/bin/rm -f /run/nginx.pid (code=exited, status=0/SUCCESS)
+
+Nov 03 10:30:47 localhost.localdomain systemd[1]: Starting The nginx HTTP and reverse proxy server...
+Nov 03 10:30:47 localhost.localdomain nginx[12772]: nginx: the configuration file /etc/nginx/nginx.conf syntax is ok
+Nov 03 10:30:47 localhost.localdomain nginx[12772]: nginx: [emerg] open() "/var/log/bluebell-access.log" failed (13: Permission denied)
+Nov 03 10:30:47 localhost.localdomain nginx[12772]: nginx: configuration file /etc/nginx/nginx.conf test failed
+Nov 03 10:30:47 localhost.localdomain systemd[1]: nginx.service: control process exited, code=exited status=1
+Nov 03 10:30:47 localhost.localdomain systemd[1]: Failed to start The nginx HTTP and reverse proxy server.
+Nov 03 10:30:47 localhost.localdomain systemd[1]: Unit nginx.service entered failed state.
+Nov 03 10:30:47 localhost.localdomain systemd[1]: nginx.service failed.
+```
+
+似乎是日志的权限问题，修改日志所有者：
+
+```bash
+chown nginx:nginx /var/log/bluebell-access.log
+chown nginx:nginx /var/log/bluebell-error.log
+```
+
+再次运行，还是不行
+
+问了 ChatGPT，原来是 SELinux 的问题
+
+> 如果你已经修改了权限并仍然遇到相同的权限错误，那么可能是 SELinux 导致的问题。在 SELinux 启用的系统上，即使文件权限看起来正确，SELinux 策略也可能会阻止某些操作。
+
+检查 SELinux 的当前状态，以确定是否启用。可以运行以下命令来查看 SELinux 状态：
+
+```bash
+sestatus
+```
+
+确实是启动状态，于是执行以下命令：
+
+```bash
+sudo chcon -t httpd_log_t /var/log/bluebell-access.log
+sudo chcon -t httpd_log_t /var/log/bluebell-error.log
+sudo systemctl restart nginx
+```
+
+就 ok 了
+
+#### 静态文件托管失败
+
+配置好 nginx 后，访问 8080 端口，失败
+
+查看日志：
+
+```log
+2023/11/03 11:45:35 [error] 21455#21455: *1 open() "/home/skylee/projects/bluebell/frontend/index.html" failed (13: Permission denied), client: 192.168.124.1, server: localhost, request: "GET / HTTP/1.1", host: "192.168.124.114:8080"
+```
+
+原因：
+
+- nginx 启动用户不一致问题
+- 静态文件权限问题
+
+修改 nginx.conf 的启动用户：
+
+```conf
+# For more information on configuration, see:
+#   * Official English Documentation: http://nginx.org/en/docs/
+#   * Official Russian Documentation: http://nginx.org/ru/docs/
+
+user root;
+worker_processes auto;
+error_log /var/log/nginx/error.log;
+pid /run/nginx.pid;
+# ...
+```
+
+然后，修改静态文件的属性：
+
+```bash
+sudo chcon -R -t httpd_sys_content_t /home/skylee/projects/bluebell/frontend # 这个目录包含了所有静态文件
+```
+
+重启 nginx 服务，正常
+
+### bluebell 配置文件
+
+不想因为配置文件的问题重新生成新的镜像，再上传到服务器，太麻烦
+
+可以使用 `docker exec` 进入容器：
+
+```bash
+root@iZf8z8fcvqy10h49shpow3Z:/home/projects# docker exec -it f0b8b4ce7791 bash
+root@f0b8b4ce7791:/# 
+
+echo '{
+    "server": {
+        "ip": "",
+        "port": 1145,
+        "lang": "zh",
+        "start_time": "2023-10-14",
+        "machine_id": 1,
+        "develop_mode": false,
+        "shutdown_waitting_time": 30
+    },
+    ...
+}' > ./config.json # 写入配置文件
+
+```
+
+# SingleFlight
+
+[原理解析](https://zhuanlan.zhihu.com/p/382965636)
+
+[实际应用](https://juejin.cn/post/7093859835694809125#heading-13)
+
+## forget
+
+- 解决数据一致性问题
+- 避免一个请求失败，所有请求都返回 error
+
+可以定时 forget 一个 key（调用完成后，开一个 goroutine，先睡眠一段时间后，forget 掉）
+
+## DoWithChan
+
+解决下游服务超时问题
+
+## 补充：一个子协程 panic 了，主协程能 recover 掉子协程的 panic 吗？
+
+实际上是不可以的
+
+**一个协程只能 recover 掉本协程内部的 panic**
+
+测试如下：
+
+```go
+package main
+
+import (
+	"fmt"
+	"time"
+)
+
+func main() {
+	go func() {
+		// defer func() {
+		// 	if r := recover(); r != nil {
+		// 		fmt.Println("Recovered in goroutine:", r)
+		// 	}
+		// }()
+
+		// 子协程中发生 panic
+		panic("Panic in goroutine")
+	}()
+
+	// 等待一些时间，以确保子协程有机会发生 panic
+	time.Sleep(1 * time.Second)
+
+	// 主协程尝试 recover，但不能捕获到子协程的 panic
+	if r := recover(); r != nil {
+		fmt.Println("Recovered in main goroutine:", r)
+	}
+
+	// 主协程继续执行，但整个程序最终崩溃
+	fmt.Println("Continuing with the main goroutine")
+}
+
+```
+
+结果如下：
+
+```bash
+Sky_Lee@SkyLeeMacBook-Pro Test % go build main.go
+Sky_Lee@SkyLeeMacBook-Pro Test % ./main          
+panic: Panic in goroutine
+
+goroutine 6 [running]:
+main.main.func1()
+        /Users/Sky_Lee/Documents/Go/Test/main.go:17 +0x25
+created by main.main in goroutine 1
+        /Users/Sky_Lee/Documents/Go/Test/main.go:9 +0x1e
+```
+
+主协程并没有 recover 掉子协程的 panic，程序崩溃了
+
+如果取消子协程的 recover，程序就不会崩溃了
+
+# 用户点赞的并发问题
+
+在点赞的业务处理中，不同用户对相同评论点赞的并发场景下，不会产生并发问题，因为 redis 的核心处理是单线程的
+
+但是，对于同一个用户，如果高并发的尝试点赞和取消点赞，就会产生并发问题
+
+主要还是出现在判断是否点赞的逻辑上
+
+解决方案：
+
+- 前端传递参数的时候，传递一个点赞还是取消点赞的参数给后端
+- 后端加锁
+
+加锁的话，就要根据不同的 cid_uid 加不同的锁，提高并发度
+
+----
+
+ab -n 1 -c 1 -p post_data.txt -T "application/json" -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjo5NTQxNTExNTc4MzkwNTI4LCJpc3MiOiJTa3lfTGVlIiwiZXhwIjoxNzAyOTg0ODMyfQ.I5GTrF_y3qHuEjWokTJthC1jPjq4mwVEQaQn8vZstKU" 'http://127.0.0.1:1145/api/v1/comment/like?comment_id=17426875689209856&obj_id=17412983613296640&obj_type=1'

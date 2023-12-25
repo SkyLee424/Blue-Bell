@@ -44,6 +44,7 @@ func Init() {
 	/* Community */
 	communityGrp := v1.Group("/community")
 	communityGrp.Use(middleware.Auth(), middleware.VerifyToken())
+	communityGrp.POST("/create", controller.CommunityCreateHandler)
 	communityGrp.GET("/list", controller.CommunityListHandler)
 	communityGrp.GET("/detail", controller.CommunityDetailHandler)
 

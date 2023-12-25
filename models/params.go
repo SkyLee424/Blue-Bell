@@ -82,3 +82,10 @@ type ParamCommentUserLikeOrHateList struct {
 	ObjType int8  `form:"obj_type" binding:"required"`
 	Like    bool  `form:"like" binding:"required"`
 }
+
+/* Community */
+type ParamCommunityCreate struct {
+	CommunityID   int64  `json:"community_id" binding:"required"`
+	CommunityName string `json:"community_name" binding:"required"`
+	Introduction  string `json:"introduction" binding:"required"`
+}

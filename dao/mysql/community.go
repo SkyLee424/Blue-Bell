@@ -37,3 +37,13 @@ func SelectCommunityIDs() ([]string, error) {
 	}
 	return communityIDs, nil
 }
+
+func CreateCommunity(communtiyID int64, communityName, intro string) error {
+	res := db.Create(&models.Community{
+		CommunityID: communtiyID,
+		CommunityName: communityName,
+		Introduction: intro,
+	})
+
+	return errors.Wrap(res.Error, "mysql:CreateCommunity: Create")
+}
