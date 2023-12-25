@@ -56,7 +56,12 @@ func Init() {
 
 	v1.GET("/post/list", controller.PostListHandler)       // 查看列表
 	v1.GET("/post/hot", controller.PostHotController)
-	v1.GET("/post/search2", controller.PostSearchHandler2) // 使用 es 实现的搜索
+	if viper.GetBool("elasticsearch.enable") {
+		v1.GET("/post/search2", controller.PostSearchHandler2) // 使用 es 实现的搜索
+	}
+	if viper.GetBool("bleve.enable") {
+		v1.GET("/post/search", controller.PostSearchHandler)   // 使用 bleve 实现的搜索
+	}
 
 	/* Comment */
 	commentGrp := v1.Group("/comment")
@@ -68,7 +73,7 @@ func Init() {
 	commentGrp.GET("/likeOrHateList", controller.CommentUserLikeOrHateListHandler)
 	
 	v1.GET("/comment/list", controller.CommentListHandler)
-
+	
 }
 
 func GetServer() *http.Server {

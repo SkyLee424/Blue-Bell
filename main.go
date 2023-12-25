@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bluebell/dao/bleve"
 	"bluebell/dao/elasticsearch"
 	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
@@ -38,8 +39,14 @@ func init() {
 	redis.InitRedis()
 	logger.Infof("Initializing Redis successfully")
 
-	elasticsearch.Init()
-	logger.Infof("Initializing Elasticsearch successfully")
+	if viper.GetBool("elasticsearch.enable") {
+		elasticsearch.Init()
+		logger.Infof("Initializing Elasticsearch successfully")
+	}
+	if viper.GetBool("bleve.enable") {
+		bleve.InitBleve()
+		logger.Infof("Initializing Bleve successfully")
+	}
 
 	localcache.InitLocalCache()
 	logger.Infof("Initializing Localcache successfully")
