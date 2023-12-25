@@ -2,6 +2,7 @@ package logic
 
 import (
 	"bluebell/algorithm"
+	"bluebell/dao/bleve"
 	"bluebell/dao/elasticsearch"
 	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
@@ -42,15 +43,20 @@ func CreatePost(post *models.Post) error {
 		return err
 	}
 
-	// elasticsearch 索引文档
-	elasticsearch.CreatePost(&models.PostDoc{
+	doc := models.PostDoc{
 		PostID:    post.PostID,
 		Title:     utils.Substr(post.Title, 0, 64),    // 只索引前 64 个字符
 		Content:   utils.Substr(post.Content, 0, 256), // 只索引前 256 个字符
-		CreatedAt: models.Time(time.Now()),
-	})
-
-	return nil
+		CreatedAt: time.Now(),
+	}
+	var err error
+	if viper.GetBool("elasticsearch.enable") {
+		err = elasticsearch.CreatePost(&doc)
+	}
+	if viper.GetBool("bleve.enable") {
+		err = bleve.CreatePost(&doc)
+	}
+	return errors.Wrap(err, "logic:CreatePost: index post doc")
 }
 
 func GetPostDetailByID(id int64, needIncrView bool) (detail *models.PostDTO, err error) {
@@ -215,7 +221,7 @@ func GetPostListByKeyword2(params *models.ParamPostListByKeyword) ([]*models.Pos
 		} else if params.OrderBy == "correlation" {
 			postIDs, total, err = elasticsearch.GetPostIDsByKeywordOrderByCorrelation(params)
 		}
-		return ReturnValueFromElasticsearch{
+		return ReturnValueFromSearch{
 			PostIDs: postIDs,
 			Total: total,
 		}, err
@@ -224,8 +230,33 @@ func GetPostListByKeyword2(params *models.ParamPostListByKeyword) ([]*models.Pos
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "logic:GetPostListByKeyword2:elasticsearch")
 	}
-	postIDs := ret.(ReturnValueFromElasticsearch).PostIDs
-	total := ret.(ReturnValueFromElasticsearch).Total
+	postIDs := ret.(ReturnValueFromSearch).PostIDs
+	total := ret.(ReturnValueFromSearch).Total
+
+	list, err := GetPostListByIDs(postIDs)
+	return list, total, err
+}
+
+// 使用 bleve 实现的搜索
+func GetPostListByKeyword(params *models.ParamPostListByKeyword) ([]*models.PostDTO, int, error) {
+	sfkey := fmt.Sprintf("%v_%v_%v_%v", params.Keyword, params.OrderBy, params.PageNum, params.PageSize)
+	timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
+	rps := viper.GetInt("service.rps")
+	interval := time.Second / time.Duration(rps)
+
+	ret, err := utils.SfDoWithTimeout(&postIDsGrp, sfkey, timeout, interval, func() (any, error) {
+		postIDs, total, err := bleve.GetPostIDsByKeyword(params)
+		return ReturnValueFromSearch{
+			PostIDs: postIDs,
+			Total: total,
+		}, err
+	})
+
+	if err != nil {
+		return nil, 0, errors.Wrap(err, "logic:GetPostListByKeyword2:elasticsearch")
+	}
+	postIDs := ret.(ReturnValueFromSearch).PostIDs
+	total := ret.(ReturnValueFromSearch).Total
 
 	list, err := GetPostListByIDs(postIDs)
 	return list, total, err
@@ -345,7 +376,7 @@ func GetHotPostList() ([]*models.PostDTO, error) {
 	return posts.([]*models.PostDTO), nil
 }
 
-type ReturnValueFromElasticsearch struct {
+type ReturnValueFromSearch struct {
 	Total   int
 	PostIDs []string
 }

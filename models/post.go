@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 type Post struct {
 	ID          int64  `gorm:"type:bigint;auto_increment" json:"id"`
 	PostID      int64  `gorm:"type:bigint;not null;unique" json:"post_id"`
@@ -22,7 +24,7 @@ type PostDoc struct {
 	PostID    int64  `json:"post_id"`
 	Title     string `json:"title"`
 	Content   string `json:"content"`
-	CreatedAt Time   `json:"created_time"`
+	CreatedAt time.Time   `json:"created_time"`
 }
 
 type PostDTO struct {
