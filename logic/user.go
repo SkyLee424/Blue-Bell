@@ -75,6 +75,7 @@ func Login(usr *models.User) (string, string, error) {
 	}
 
 	// 刷新 access_token、refresh_token 并返回
+	usr.UserID = _usr.UserID
 	return genTokenHelper(_usr.UserID)
 }
 
