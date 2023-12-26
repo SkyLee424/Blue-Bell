@@ -253,11 +253,11 @@ func GetPostListByKeyword(params *models.ParamPostListByKeyword) ([]*models.Post
 	})
 
 	if err != nil {
-		return nil, 0, errors.Wrap(err, "logic:GetPostListByKeyword2:elasticsearch")
+		return nil, 0, errors.Wrap(err, "logic:GetPostListByKeyword2:bleve")
 	}
 	postIDs := ret.(ReturnValueFromSearch).PostIDs
 	total := ret.(ReturnValueFromSearch).Total
-
+	
 	list, err := GetPostListByIDs(postIDs)
 	return list, total, err
 }
@@ -297,6 +297,10 @@ func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
 		idx := 0
 		for i := 0; i < len(list); i++ {
 			if list[i] == nil {
+				if idx >= len(missPostList) {
+					// 传进来的 postID 在 db 中也没有，postID 不合法，或者 db 数据丢失
+					return nil, errors.Wrap(bluebell.ErrInternal, "logic:GetPostListByIDs: idx >= len(missPostList)")
+				}
 				list[i] = missPostList[idx]
 				idx++
 			}
