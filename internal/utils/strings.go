@@ -1,6 +1,8 @@
 package utils
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"strconv"
 	"unicode/utf8"
 )
@@ -40,4 +42,20 @@ func ConvertInt64SliceToStringSlice(arr []int64) []string {
 	}
 
 	return res
+}
+
+func Int64SliceToHashedString(data []int64) string {
+	// 将 int64 切片转化为字节数组
+	var byteData []byte
+	for _, num := range data {
+		byteData = append(byteData, byte(num))
+	}
+
+	// 计算 SHA-256 哈希值
+	hash := sha256.Sum256(byteData)
+
+	// 将哈希值转化为字符串
+	hashString := hex.EncodeToString(hash[:])
+
+	return hashString
 }
