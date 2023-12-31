@@ -9,8 +9,10 @@ import (
 	"gorm.io/gorm"
 )
 
-func CreateCommentContent(content *models.CommentContent) error {
-	res := db.Create(&content)
+func CreateCommentContent(tx * gorm.DB, content *models.CommentContent) error {
+	useDB := getUseDB(tx)
+
+	res := useDB.Create(&content)
 	return errors.Wrap(res.Error, "mysql: CreateCommentContent failed")
 }
 
