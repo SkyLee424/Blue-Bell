@@ -3,6 +3,7 @@ package main
 import (
 	"bluebell/dao/bleve"
 	"bluebell/dao/elasticsearch"
+	"bluebell/dao/kafka"
 	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
 	"bluebell/dao/redis"
@@ -47,6 +48,9 @@ func init() {
 		bleve.InitBleve()
 		logger.Infof("Initializing Bleve successfully")
 	}
+
+	kafka.InitKafka()
+	logger.Infof("Initializing Kafka successfully")
 
 	localcache.InitLocalCache()
 	logger.Infof("Initializing Localcache successfully")
@@ -102,6 +106,7 @@ func main() {
 
 	<-idleConnsClosed // 直到 close 后，主线程才会退出
 	logger.Infof("Waitting for all background tasks to complete...")
-	workers.Wait()    // 等待所有后台任务结束才退出
+	workers.Wait() // 等待所有后台任务结束才退出
+	kafka.Wait()   // 等待消费者全部退出
 	logger.Infof("Done.\n\nBlueBell server closed successfully")
 }
