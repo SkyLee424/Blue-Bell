@@ -14,6 +14,7 @@ func InitLocalCache() {
 	localcache = gcache.New(size).LRU().Build()
 	viewCache = gcache.New(size).LRU().Build()
 	createTimeCache = gcache.New(size).LRU().Build()
+	statusCache = gcache.New(size).LRU().Build()
 }
 
 func GetLocalCache() gcache.Cache {
