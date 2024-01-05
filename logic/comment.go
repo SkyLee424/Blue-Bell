@@ -1,6 +1,7 @@
 package logic
 
 import (
+	"bluebell/dao/kafka"
 	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
 	"bluebell/dao/rebuild"
@@ -20,7 +21,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 	"golang.org/x/sync/singleflight"
-	"gorm.io/gorm"
 )
 
 var CommentIndexGrp singleflight.Group
@@ -29,92 +29,12 @@ var CommentMetaDataGrp singleflight.Group
 
 func CreateComment(param *models.ParamCommentCreate, userID int64) (*models.CommentDTO, error) {
 	commentID := utils.GenSnowflakeID()
-	commentContent := &models.CommentContent{
-		CommentID: commentID,
-		Message:   param.Message,
-	}
-
-	// 先写 content（弱一致性需求）
-	if err := mysql.CreateCommentContent(commentContent); err != nil {
-		return nil, errors.Wrap(err, "logic:CreateComment: CreateCommentContent failed")
-	}
-
-	// 事务更新 subject、index 表
-	tx0 := mysql.GetDB().Begin()
-
-	// 判断是否需要创建新的 subject
-	exist, err := mysql.SelectCommentSubjectCount(tx0, param.ObjID, param.ObjType)
-	if err != nil {
-		tx0.Rollback()
-		return nil, errors.Wrap(err, "logic:CreateComment: SelectCommentSubjectCount failed")
-	}
-	if exist == 0 {
-		if err := mysql.CreateCommentSubject(tx0, commentID, param.ObjID, param.ObjType); err != nil {
-			if !errors.Is(err, gorm.ErrDuplicatedKey) { // 其它错误，事务失败
-				tx0.Rollback()
-				return nil, errors.Wrap(err, "logic:CreateComment: SelectCommentSubjectCount failed")
-			}
+	// 异步投递消息到 kafka
+	go func() {
+		if err := kafka.CreateComment(*param, userID, commentID); err != nil {
+			logger.Errorf("logic:CreateComment: send message to kafka failed, reason: %v", err.Error())
 		}
-	}
-
-	// 如果是根评论，递增 root_count、count（update 实际上是串行执行的，因为有锁，因此，如果有其他事务还没提交，这里就会阻塞等待）
-	if param.Root == 0 {
-		if err := mysql.IncrCommentSubjectCountField(tx0, "root_count", param.ObjID, param.ObjType, 1); err != nil {
-			tx0.Rollback()
-			return nil, errors.Wrap(err, "logic:CreateComment: IncrCommentSubjectRootCount(root_count) failed")
-		}
-
-		if err := mysql.IncrCommentSubjectCountField(tx0, "count", param.ObjID, param.ObjType, 1); err != nil {
-			tx0.Rollback()
-			return nil, errors.Wrap(err, "logic:CreateComment: IncrCommentSubjectCount(count) failed")
-		}
-	}
-
-	// 确定 floor 字段
-	var floor int
-	if param.Root == 0 {
-		floor, err = mysql.SelectCommentSubjectCountField(tx0, "count", param.ObjID, param.ObjType)
-		if err != nil {
-			tx0.Rollback()
-			return nil, errors.Wrap(err, "logic:CreateComment: SelectCommentSubjectCount(count) failed")
-		}
-	} else {
-		err = mysql.IncrCommentIndexCountField(tx0, "count", param.Root, 1)
-		if err != nil {
-			tx0.Rollback()
-			return nil, errors.Wrap(err, "logic:CreateComment: IncrCommentIndexCount(count) failed")
-		}
-		err = mysql.IncrCommentIndexCountField(tx0, "root_count", param.Root, 1)
-		if err != nil {
-			tx0.Rollback()
-			return nil, errors.Wrap(err, "logic:CreateComment: IncrCommentIndexCount(root_count) failed")
-		}
-		floor, err = mysql.SelectCommentIndexCountField(tx0, "count", param.Root)
-		if err != nil {
-			tx0.Rollback()
-			return nil, errors.Wrap(err, "logic:CreateComment: SelectCommentIndexCount(count) failed")
-		}
-	}
-
-	// 写 index 表
-	index := &models.CommentIndex{
-		ID:        commentID,
-		ObjID:     param.ObjID,
-		ObjType:   param.ObjType,
-		Root:      param.Root,
-		Parent:    param.Parent,
-		UserID:    userID,
-		Floor:     floor,
-		Count:     0,
-		RootCount: 0,
-	}
-
-	if err = mysql.CreateCommentIndex(tx0, index); err != nil {
-		tx0.Rollback()
-		return nil, errors.Wrap(err, "logic:CreateComment: CreateCommentIndex failed")
-	}
-
-	tx0.Commit()
+	}()
 
 	commentDTO := models.CommentDTO{
 		CommentID: commentID,
@@ -123,7 +43,7 @@ func CreateComment(param *models.ParamCommentCreate, userID int64) (*models.Comm
 		Root:      param.Root,
 		Parent:    param.Parent,
 		UserID:    userID,
-		Floor:     floor,
+		// Floor:     floor[0],
 		Content: struct {
 			Message string "json:\"message\""
 		}{
@@ -133,37 +53,13 @@ func CreateComment(param *models.ParamCommentCreate, userID int64) (*models.Comm
 		UpdatedAt: models.Time(time.Now()),
 	}
 
-	// 写缓存
-	if index.Root == 0 {
-		_, err = rebuild.RebuildCommentIndex(index.ObjType, index.ObjID, 0) // 在写缓存前尝试 rebuild 一下，确保缓存中有完整的 comment_id
-		if err != nil {
-			// 重建失败，如果继续写缓存，可能会造成缓存中不具有完整的 comment_id，拒绝服务
-			return nil, errors.Wrap(err, "logic:CreateComment: RebuildCommentIndex")
-		}
-		if err = redis.AddCommentIndexMembers(index.ObjType, index.ObjID, []int64{commentID}, []int{floor}); err != nil {
-			logger.Warnf("logic:CreateComment: AddCommentIndexMember failed, reason: %v", err.Error())
-		}
-	} else { // 判断是否需要更新 local cache
-		cacheKey := fmt.Sprintf("%v_%v_replies", objects.ObjComment, index.Root)
-		replyIDs, err := localcache.GetLocalCache().Get(cacheKey)
-		if err == nil { // cache hit，need update
-			tmp := replyIDs.([]int64)
-			tmp = append(tmp, commentID)
-			localcache.GetLocalCache().Set(cacheKey, tmp)
-			cacheKey = fmt.Sprintf("%v_%v_replies", objects.ObjComment, commentID)
-			localcache.GetLocalCache().Set(cacheKey, commentDTO)
-		}
-	}
-	if err = redis.AddCommentContents([]int64{commentID}, []string{commentContent.Message}); err != nil {
-		logger.Warnf("logic:CreateComment: AddCommentContent failed, reason: %v", err.Error())
-	}
-
 	return &commentDTO, nil
 }
 
 // 默认按照楼层排序
 func GetCommentList(param *models.ParamCommentList) (*models.CommentListDTO, error) {
 	commentIDs, err := getCommentIDs(param.ObjType, param.ObjID)
+	// logger.Debugf("getCommentIDs: commentIDs: %v", commentIDs)
 	if err != nil {
 		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentIDs")
 	}
@@ -255,103 +151,41 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 		return errors.Wrap(err, "logic:RemoveComment: SelectSubCommentIDsByField")
 	}
 	commentIDs = append(commentIDs, params.CommentID)
-	tx := mysql.GetDB().Begin()
-
-	// 修改 root_count（主要是可能要获取根评论 id，删除了就获取不到了，由于是一个事务，顺序其实无所谓）
-	offset := len(commentIDs)
-	if isRoot {
-		// 修改 subject 的 root_count
-		if err := mysql.IncrCommentSubjectCountField(tx, "root_count", params.ObjID, params.ObjType, -1); err != nil {
-			tx.Rollback()
-			return errors.Wrap(err, "logic:RemoveComment: IncrCommentSubjectCountField(root_count)")
+	
+	go func() {
+		if err := kafka.RemoveComment(*params, userID, commentIDs, isRoot); err != nil {
+			logger.Errorf("logic:RemoveComment: send message to kafka failed, reason: %v", err.Error())
 		}
-	} else {
-		// 获取根评论 id
-		root, err := mysql.SelectCommentRootIDByCommentID(tx, params.CommentID)
-		if err != nil {
-			tx.Rollback()
-			return errors.Wrap(err, "logic:RemoveComment: SelectCommentRootIDByCommentID")
-		}
-		if err := mysql.IncrCommentIndexCountField(tx, "root_count", root, -offset); err != nil { // 修改对应根评论的 root_count
-			tx.Rollback()
-			return errors.Wrap(err, "logic:RemoveComment: IncrCommentIndexCountField(root_count)")
-		}
-	}
-
-	// ciduids := make([]string, len(commentIDs))
-	// for i := 0; i < len(ciduids); i++ {
-	// 	ciduids[i] = fmt.Sprintf("%v:%v", commentIDs[i], userID)
-	// }
-
-	// 根据 ID 删除评论
-	// 事务删除
-	if err := mysql.DeleteCommentIndexByCommentIDs(tx, commentIDs); err != nil {
-		tx.Rollback()
-		return errors.Wrap(err, "logic:RemoveComment: DeleteCommentIndexByCommentIDs")
-	}
-	if err := mysql.DeleteCommentContentByCommentIDs(tx, commentIDs); err != nil {
-		tx.Rollback()
-		return errors.Wrap(err, "logic:RemoveComment: DeleteCommentContentByCommentIDs")
-	}
-	if err := mysql.DeleteCommentUserLikeMappingByCommentIDs(tx, commentIDs); err != nil {
-		tx.Rollback()
-		return errors.Wrap(err, "logic:RemoveComment: DeleteCommentUserLikeMappingByCommentIDs")
-	}
-	if err := mysql.DeleteCommentUserHateMappingByCommentIDs(tx, commentIDs); err != nil {
-		tx.Rollback()
-		return errors.Wrap(err, "logic:RemoveComment: DeleteCommentUserHateMappingByCommentIDs")
-	}
-
-	tx.Commit()
-
-	// 删缓存
-	if isRoot {
-		err = redis.RemCommentIndexMembersByCommentID(params.ObjType, params.ObjID, params.CommentID) // 先把索引删了
-		if err != nil {
-			logger.Warnf("logic:RemoveComment: RemCommentIndexMembersByCommentIDs failed, reason: %v", err.Error())
-		}
-	}
-	redis.DelCommentContentsByCommentIDs(commentIDs)
-	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, true)
-	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, false)
-	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, true)
-	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, false)
-
-	// 删本地缓存
-	cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, params.CommentID)
-	localcache.GetLocalCache().Remove(cacheKey)
-	cacheKey = fmt.Sprintf("%v_%v_replies", objects.ObjComment, params.CommentID)
-	localcache.GetLocalCache().Remove(cacheKey)
-	localcache.RemoveObjectView(objects.ObjComment, params.CommentID)
+	}()
 
 	return nil
 }
 
 
 var (
-    commentCache = make(map[string]*sync.Mutex)
-    cacheMutex    sync.Mutex
+	commentCache = make(map[string]*sync.Mutex)
+	cacheMutex    sync.Mutex
 )
 
 // 针对每个 uid_cid_oid_otype 有一个锁
 func getCommentMutex(uid_cid_oid_otype string) *sync.Mutex {
-    cacheMutex.Lock()
-    defer cacheMutex.Unlock()
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
 
-    mutex, exists := commentCache[uid_cid_oid_otype]
-    if !exists {
-        mutex = &sync.Mutex{}
-        commentCache[uid_cid_oid_otype] = mutex
-    }
+	mutex, exists := commentCache[uid_cid_oid_otype]
+	if !exists {
+		mutex = &sync.Mutex{}
+		commentCache[uid_cid_oid_otype] = mutex
+	}
 
 	mutex.Lock() // 上了锁以后再给调用者
-    return mutex
+	return mutex
 }
 
 // 在不需要锁的时候释放，避免内存泄漏
 func deleteCommentMutex(uid_cid_oid_otype string) {
 	cacheMutex.Lock()
-    defer cacheMutex.Unlock()
+	defer cacheMutex.Unlock()
 
 	mutex, exist := commentCache[uid_cid_oid_otype]
 	if !exist {
