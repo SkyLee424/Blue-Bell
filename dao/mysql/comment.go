@@ -119,7 +119,7 @@ func SelectCommentIndexCountField(tx *gorm.DB, field string, root int64) (int, e
 func SelectCommentSubjectCount(tx *gorm.DB, objID int64, objType int8) (int, error) {
 	useDB := getUseDB(tx)
 	var count int
-	res := useDB.Model(&models.CommentIndex{}).Select("count(*)").Where("obj_id = ? AND obj_type = ?", objID, objType).Scan(&count)
+	res := useDB.Model(&models.CommentSubject{}).Select("count(*)").Where("obj_id = ? AND obj_type = ?", objID, objType).Scan(&count)
 	return count, errors.Wrap(res.Error, "mysql: SelectCommentSubjectCount")
 }
 
