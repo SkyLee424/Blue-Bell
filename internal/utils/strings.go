@@ -5,6 +5,8 @@ import (
 	"encoding/hex"
 	"strconv"
 	"unicode/utf8"
+
+	"github.com/pkg/errors"
 )
 
 func Substr(s string, start int, length int) string {
@@ -36,12 +38,25 @@ func Substr(s string, start int, length int) string {
 
 func ConvertInt64SliceToStringSlice(arr []int64) []string {
 	res := make([]string, 0, len(arr))
-	for _, commentID := range arr {
-		arrtr := strconv.FormatInt(commentID, 10)
-		res = append(res, arrtr)
+	for _, elem := range arr {
+		after := strconv.FormatInt(elem, 10)
+		res = append(res, after)
 	}
 
 	return res
+}
+
+func ConvertStringSliceToInt64Slice(arr []string) ([]int64, error) {
+	res := make([]int64, 0, len(arr))
+	for _, elem := range arr {
+		after, err := strconv.ParseInt(elem, 10, 64)
+		if err != nil {
+			return nil, errors.Wrap(err, "utils:ConvertStringSliceToInt64Slice: ParseInt")
+		}
+		res = append(res, after)
+	}
+
+	return res, nil
 }
 
 func Int64SliceToHashedString(data []int64) string {
