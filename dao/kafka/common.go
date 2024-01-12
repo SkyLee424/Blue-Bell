@@ -186,7 +186,7 @@ func initConsumer(partitionNum, replicationFactor int, topic, group string) {
 	wg.Add(partitionNum)
 	for i := 0; i < partitionNum; i++ {
 		r := kafka.NewReader(kafka.ReaderConfig{
-			Brokers: []string{"localhost:9093", "localhost:9094", "localhost:9095"},
+			Brokers: addr,
 			Topic:   topic,
 			GroupID: group,
 		})
