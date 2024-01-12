@@ -11,6 +11,23 @@ import (
 )
 
 /* bluebell:comment:index: */
+func CheckCommentIfExist(objType int8, objID int64, commentID int64) (bool, error) {
+	key := fmt.Sprintf("%v%v_%v", KeyCommentIndexZSetPF, objType, objID)
+	
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.ZScore(ctx, key, strconv.FormatInt(commentID, 10))
+	if cmd.Err() != nil {
+		if errors.Is(cmd.Err(), redis.Nil) {
+			return false, nil
+		}
+		return false, errors.Wrap(cmd.Err(), "redis.CheckCommentIfExist.ZScore")
+	}
+
+	return true, nil
+}
+
 func AddCommentIndexMembers(objType int8, objID int64, commentIDs []int64, floor []int) error {
 	if len(commentIDs) != len(floor) {
 		return errors.Wrap(bluebell.ErrInternal, "redis:AddCommentIndexMember: commentIDs and floors length not equal")

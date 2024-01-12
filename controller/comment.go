@@ -187,8 +187,12 @@ func CommentUserLikeOrHateListHandler(ctx *gin.Context) {
 func commentLikeHateHelper(ctx *gin.Context, commentID, objID int64, objType int8, like bool) {
 	userID := ctx.GetInt64("user_id")
 	if err := logic.LikeOrHateForComment(userID, commentID, objID, objType, like); err != nil {
-		common.ResponseError(ctx, common.CodeInternalErr)
-		logger.ErrorWithStack(err)
+		if errors.Is(err, bluebell.ErrNoSuchComment) {
+			common.ResponseError(ctx, common.CodeNoSuchComment)
+		} else {
+			common.ResponseError(ctx, common.CodeInternalErr)
+			logger.ErrorWithStack(err)
+		}
 		return
 	}
 	common.ResponseSuccess(ctx, nil)

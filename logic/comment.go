@@ -203,6 +203,20 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 	defer deleteCommentMutex(key)
 	defer mutex.Unlock()		  // 先释放锁，再 deleteCommentMutex，不然死锁
 
+	// 判断缓存是否 miss，如果 miss，重建
+	if err := rebuild.RebuildCommentIndex(objType, objID); err != nil {
+		return errors.Wrap(err, "logic.LikeOrHateForComment.RebuildCommentIndex")
+	}
+
+	// 判断评论是否存在
+	exist, err := redis.CheckCommentIfExist(objType, objID, commentID)
+	if err != nil {
+		return errors.Wrap(err, "logic.LikeOrHateForComment.CheckCommentIfExist")
+	}
+	if !exist {
+		return bluebell.ErrNoSuchComment
+	}
+	
 	// 判断该用户是否点赞（踩）过
 	pre, err := redis.CheckCommentLikeOrHateIfExistUser(commentID, userID, objID, objType, like)
 	if err != nil {
@@ -465,7 +479,11 @@ func getCommentIDs(objType int8, objID int64) ([]int64, error) {
 		interval := time.Second / time.Duration(rps)
 
 		commentIDs, err := utils.SfDoWithTimeout(&CommentIndexGrp, key, timeout, interval, func() (any, error) {
-			return rebuild.RebuildCommentIndex(objType, objID, 0)
+			// 检查缓存是否 miss，如果 miss，重建
+			if err := rebuild.RebuildCommentIndex(objType, objID); err != nil {
+				return nil, errors.Wrap(err, "logic.getCommentIDs.RebuildCommentIndex")
+			}
+			return redis.GetCommentIndexMember(objType, objID)
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "logic:getCommentIDs: RebuildCommentIndex")
