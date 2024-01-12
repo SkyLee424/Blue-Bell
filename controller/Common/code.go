@@ -23,6 +23,8 @@ const (
 	CodeNoSuchPost
 	CodeVoteTimeExpire
 
+	CodeNoSuchComment
+
 	CodeForbidden
 	CodeTimeOut
 )
@@ -47,6 +49,8 @@ var codeMsgMap = map[Code]string{
 
 	CodeNoSuchPost:     "没有该帖子",
 	CodeVoteTimeExpire: "超过投票时间",
+
+	CodeNoSuchComment: "没有该评论",
 
 	CodeForbidden: "禁止访问",
 	CodeTimeOut: "请求超时",

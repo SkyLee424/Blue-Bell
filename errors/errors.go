@@ -23,6 +23,9 @@ var (
 	ErrNoSuchPost     = errors.New("没有该帖子")
 	ErrVoteTimeExpire = errors.New("超过投票时间")
 
+	// comment
+	ErrNoSuchComment = errors.New("没有该评论")
+
 	// params
 	ErrInvalidParam = errors.New("无效参数")
 
