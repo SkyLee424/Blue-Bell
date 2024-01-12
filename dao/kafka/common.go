@@ -146,7 +146,10 @@ func initConfig() {
 
 func createTopic(topicName string, partitionNum, replicationFactor int) {
 	// 连接至任意kafka节点
-	conn, err := kafka.Dial("tcp", "localhost:9093")
+	if len(addr) == 0 {
+		panic("kafka address length should not be zero")
+	}
+	conn, err := kafka.Dial("tcp", addr[0])
 	if err != nil {
 		panic(err.Error())
 	}
