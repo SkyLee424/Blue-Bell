@@ -114,7 +114,7 @@ func createComment(tx *gorm.DB, msg kafka.Message, params CommentCreate) (res Re
 
 	// 写缓存
 	if params.Root == 0 {
-		_, err = rebuild.RebuildCommentIndex(params.ObjType, params.ObjID, 0) // 在写缓存前尝试 rebuild 一下，确保缓存中有完整的 comment_id
+		err = rebuild.RebuildCommentIndex(params.ObjType, params.ObjID) // 在写缓存前尝试 rebuild 一下，确保缓存中有完整的 comment_id
 		if err != nil {
 			// 重建失败，如果继续写缓存，可能会造成缓存中不具有完整的 comment_id，拒绝服务
 			res.Err = errors.Wrap(err, "kafka:CreateComment: RebuildCommentIndex")
