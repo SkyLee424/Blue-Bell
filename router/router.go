@@ -22,8 +22,14 @@ func Init() {
 	}
 
 	router = gin.New()
-	frontendPath := viper.GetString("CORF.frontend_path")
-	router.Use(logger.GinLogger(), logger.GinRecovery(true), middleware.RateLimit(0.6, 5000), middleware.CORF(frontendPath)) // 全局限流
+	frontendPath := viper.GetString("router.corf.frontend_path")
+	middlewares := []gin.HandlerFunc{logger.GinLogger(), logger.GinRecovery(true), middleware.CORF(frontendPath)}
+	if viper.GetBool("router.ratelimit.enable") { // 全局限流
+		rate := viper.GetFloat64("router.ratelimit.rate")
+		capacity := viper.GetInt64("router.ratelimit.capacity")
+		middlewares = append(middlewares, middleware.RateLimit(rate, capacity))
+	}
+	router.Use(middlewares...)
 
 	/* Swagger 接口文档 */
 	if viper.GetBool("service.swagger.enable") {
