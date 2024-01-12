@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"log"
 	"time"
 
 	"github.com/pkg/errors"
@@ -43,11 +42,10 @@ rootloop:
 		msgs, err := fetchMessages(ctx, consumer, batchSize)
 		if err != nil {
 			if !errors.Is(err, context.DeadlineExceeded) { // 其它错误
-				log.Printf("err: kafka:FetchMessages: %v\n", err.Error())
+				logger.Errorf("kafka.FetchMessages: %v", err.Error())
 			}
 			continue
 		}
-		log.Printf("fetch msgs' length: %v", len(msgs))
 
 		success := false
 		for i := 0; i < KafkaConsumerRetryTime; i++ {
@@ -78,7 +76,7 @@ rootloop:
 
 			if err != nil { // 说明在整个事务中，出现了错误，需要回滚事务，「不」向 kafka server 提交 offset
 				// 打印日志
-				log.Printf("kafka:CommentConsumer: convertAndConsume error: %v\n", err.Error())
+				logger.Errorf("kafka:CommentConsumer: convertAndConsume error: %v", err.Error())
 
 				// 回滚事务
 				tx.Rollback()
