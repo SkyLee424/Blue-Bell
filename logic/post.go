@@ -47,13 +47,14 @@ func CreatePost(post *models.Post) error {
 		PostID:    post.PostID,
 		Title:     utils.Substr(post.Title, 0, 64),    // 只索引前 64 个字符
 		Content:   utils.Substr(post.Content, 0, 256), // 只索引前 256 个字符
-		CreatedAt: time.Now(),
 	}
 	var err error
 	if viper.GetBool("elasticsearch.enable") {
+		doc.CreatedAt = models.Time(time.Now())
 		err = elasticsearch.CreatePost(&doc)
 	}
 	if viper.GetBool("bleve.enable") {
+		doc.CreatedAt = time.Now()
 		err = bleve.CreatePost(&doc)
 	}
 	return errors.Wrap(err, "logic:CreatePost: index post doc")
