@@ -25,3 +25,12 @@ Thumbs.db
 /Note
 /temp
 .dockerignore
+/bluebell_post.bleve
+/container
+test.go
+tmp.txt
+post_data.txt
+post_data1.txt
+bluebell-server
+Dockerfile
+docker-compose.yml
