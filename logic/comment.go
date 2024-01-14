@@ -58,27 +58,20 @@ func CreateComment(param *models.ParamCommentCreate, userID int64) (*models.Comm
 
 // 默认按照楼层排序
 func GetCommentList(param *models.ParamCommentList) (*models.CommentListDTO, error) {
-	commentIDs, err := getCommentIDs(param.ObjType, param.ObjID)
+	commentIDs, err := getCommentIDs(param.ObjType, param.ObjID, param.PageNum, param.PageSize)
 	// logger.Debugf("getCommentIDs: commentIDs: %v", commentIDs)
 	if err != nil {
 		return nil, errors.Wrap(err, "logic:GetCommentList: getCommentIDs")
 	}
-	total := len(commentIDs) // 根评论总数
-	if total == 0 {
+	total, err := redis.GetCommentIndexMemberCount(param.ObjType, param.ObjID) // 根评论总数
+	if err != nil {
+		return nil, errors.Wrap(err, "logic.GetCommentList.GetCommentIndexMemberCount")
+	}
+	if total == 0 || len(commentIDs) == 0 {
 		return &models.CommentListDTO{Total: total}, nil
 	}
 
-	// 检查分页参数是否正确
-	start := (param.PageNum - 1) * param.PageSize
-	if start >= int64(total) {
-		return nil, errors.Wrap(bluebell.ErrInvalidParam, "logic:GetCommentList: PageNum is too long!")
-	}
-	end := start + param.PageSize
-	if end >= int64(total) {
-		end = int64(total)
-	}
-
-	rootCommentIDs := commentIDs[start:end] // 分页，减少查询成本
+	rootCommentIDs := commentIDs // 分页，减少查询成本
 
 	rootCommentDTO, err := GetCommentDetailByCommentIDs(true, true, rootCommentIDs)
 	if err != nil {
@@ -463,15 +456,17 @@ func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64)
 	return commentDTOList, nil
 }
 
-func getCommentIDs(objType int8, objID int64) ([]int64, error) {
+func getCommentIDs(objType int8, objID, pageNum, pageSize int64) ([]int64, error) {
 	key := fmt.Sprintf("%v%v_%v", redis.KeyCommentIndexZSetPF, objType, objID)
 	exist, err := redis.Exists(key)
 	if err != nil {
 		return nil, errors.Wrap(err, "logic:getCommentIDs: Exists")
 	}
 
+	start := (pageNum - 1) * pageSize
+	stop := start + pageSize
 	if exist { // cache hit
-		return redis.GetCommentIndexMember(objType, objID)
+		return redis.GetCommentIndexMember(objType, objID, start, stop)
 	} else { // cache miss, rebuild
 		key = fmt.Sprintf("%v_%v", objType, objID)
 		timeout := time.Second * time.Duration(viper.GetInt("service.timeout"))
@@ -483,7 +478,7 @@ func getCommentIDs(objType int8, objID int64) ([]int64, error) {
 			if err := rebuild.RebuildCommentIndex(objType, objID); err != nil {
 				return nil, errors.Wrap(err, "logic.getCommentIDs.RebuildCommentIndex")
 			}
-			return redis.GetCommentIndexMember(objType, objID)
+			return redis.GetCommentIndexMember(objType, objID, start, stop)
 		})
 		if err != nil {
 			return nil, errors.Wrap(err, "logic:getCommentIDs: RebuildCommentIndex")

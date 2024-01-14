@@ -49,14 +49,28 @@ func AddCommentIndexMembers(objType int8, objID int64, commentIDs []int64, floor
 	return errors.Wrap(err, "redis:AddCommentIndexMember: ZAdd")
 }
 
-func GetCommentIndexMember(objType int8, objID int64) ([]int64, error)  {
+func GetCommentIndexMemberCount(objType int8, objID int64) (int, error) {
 	key := fmt.Sprintf("%v%v_%v", KeyCommentIndexZSetPF, objType, objID)
 
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
 
-	cmd := rdb.ZRange(ctx, key, 0, (1 << 62))
+	cmd := rdb.ZCard(ctx, key)
+	
+	return int(cmd.Val()), errors.Wrap(cmd.Err(), "redis.GetCommentIndexMemberCount.ZCard")
+}
+
+func GetCommentIndexMember(objType int8, objID, start, stop int64) ([]int64, error)  {
+	key := fmt.Sprintf("%v%v_%v", KeyCommentIndexZSetPF, objType, objID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.ZRange(ctx, key, start, stop - 1) // 获取 index 在 [start, stop - 1] 内的 commentID
 	if cmd.Err() != nil {
+		if errors.Is(cmd.Err(), redis.Nil) {
+			return nil, nil
+		}
 		return nil, errors.Wrap(cmd.Err(), "redis:GetCommentIndexMember: ZRange")
 	}
 	commentIDStrs := cmd.Val()
