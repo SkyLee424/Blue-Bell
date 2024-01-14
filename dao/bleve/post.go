@@ -25,7 +25,7 @@ func GetPostIDsByKeyword(params *models.ParamPostListByKeyword) ([]string, int, 
 		postIDs = append(postIDs, res.ID)
 	}
 
-	return postIDs, len(postIDs), nil
+	return postIDs, int(searchResults.Total), nil
 }
 
 func UpdatePost(doc *models.PostDoc) error {
