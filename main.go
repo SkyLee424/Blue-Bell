@@ -107,6 +107,7 @@ func main() {
 	<-idleConnsClosed // 直到 close 后，主线程才会退出
 	logger.Infof("Waitting for all background tasks to complete...")
 	workers.Wait() // 等待所有后台任务结束才退出
-	kafka.Wait()   // 等待消费者全部退出
+	logger.Infof("Waitting for all kafka consumer to exit...")
+	kafka.Wait() // 等待消费者全部退出
 	logger.Infof("Done.\n\nBlueBell server closed successfully")
 }

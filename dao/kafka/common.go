@@ -2,7 +2,6 @@ package kafka
 
 import (
 	"bluebell/dao/localcache"
-	"fmt"
 	"net"
 	"strconv"
 	"sync"
@@ -99,8 +98,6 @@ func InitKafka() {
 }
 
 func Wait() {
-	fmt.Println("Closing Kafka reader...")
-
 	// 通知消费者退出
 	for i := 0; i < len(notifyList); i++ {
 		notifyList[i] <- 1

@@ -6,7 +6,6 @@ import (
 	"bluebell/logger"
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"time"
 
@@ -31,7 +30,6 @@ rootloop:
 		// 检查是否应该退出循环
 		select {
 		case <-ch:
-			fmt.Println("exit.")
 			break rootloop
 		default:
 		}
