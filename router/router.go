@@ -81,6 +81,11 @@ func Init() {
 	
 	v1.GET("/comment/list", controller.CommentListHandler)
 	
+	/* Qiniu */
+	qiniuGrp := v1.Group("/qiniu")
+	qiniuGrp.Use(middleware.Auth(), middleware.VerifyToken())
+	qiniuGrp.GET("/upload/gentoken", controller.QiniuGenUploadTokenHandler)
+	v1.POST("/qiniu/upload/callback", controller.QiniuUploadCallbackHandler) // 这里不需要鉴权
 }
 
 func GetServer() *http.Server {

@@ -34,3 +34,8 @@ type ResponsePostDetail struct {
 		VoteNum   int64       `json:"vote_num"`
 	} `json:"post_info"`
 }
+
+type ResponseQiniuCallback struct {
+	FileName string `json:"file_name"`
+	URL      string `json:"url"`
+}

@@ -6,6 +6,7 @@ import (
 	"bluebell/dao/kafka"
 	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
+	"bluebell/dao/qiniu"
 	"bluebell/dao/redis"
 	"bluebell/internal/utils"
 	"bluebell/logger"
@@ -54,6 +55,9 @@ func init() {
 
 	localcache.InitLocalCache()
 	logger.Infof("Initializing Localcache successfully")
+
+	qiniu.InitQiniuConfig()
+	logger.Infof("Initializing Qiniu Config successfully")
 
 	router.Init()
 	logger.Infof("Initializing router successfully")
