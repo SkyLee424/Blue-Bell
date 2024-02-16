@@ -7,6 +7,7 @@ import (
 	"bluebell/logger"
 	"bluebell/logic"
 	"bluebell/models"
+	"bluebell/objects"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -367,4 +368,51 @@ func PostHotController(ctx *gin.Context) {
 		Total: len(list),
 		Posts: list,
 	})
+}
+
+// PostRemoveHandler 删除帖子接口
+//
+//	@Summary		删除帖子接口
+//	@Description	根据 post_id 删除帖子及其下所有评论
+//	@Tags			帖子相关接口
+//	@Accept			application/json
+//	@Produce		application/json
+//	@Param			Authorization	header	string					false	"Bearer 用户令牌"
+//	@Param			object			query	models.ParamPostRemove	false	"查询参数"
+//	@Security		ApiKeyAuth
+//	@Success		200	{object}	common.Response
+//	@Router			/post/remove [delete]
+func PostRemoveHandler(ctx *gin.Context)  {
+	params := models.ParamPostRemove{}
+
+	if err := ctx.ShouldBindQuery(&params); err != nil {
+		common.ResponseErrorWithMsg(ctx, common.CodeInvalidParam, utils.ParseToValidationError(err))
+		return
+	}
+
+	value, exists := ctx.Get("user_id")
+	if !exists {
+		common.ResponseError(ctx, common.CodeInternalErr)
+		// 打日志
+		logger.Errorf("controller.PostVoteHandler: get user_id from context failed")
+		return
+	}
+	userID := value.(int64)
+
+	// 删除帖子
+	if err := logic.RemovePost(userID, params); err != nil {
+		if errors.Is(err, bluebell.ErrForbidden) {
+			common.ResponseError(ctx, common.CodeForbidden)
+		} else {
+			common.ResponseError(ctx, common.CodeInternalErr)
+			logger.ErrorWithStack(err)
+		}
+		return
+	}
+
+	// 删除评论
+	// 根据 objID、objType 删除其下所有评论
+	logic.RemoveCommentsByObjID(params.PostID, objects.ObjPost)
+	
+	common.ResponseSuccess(ctx, nil)
 }

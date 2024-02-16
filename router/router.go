@@ -58,6 +58,7 @@ func Init() {
 	postGrp := v1.Group("/post")
 	postGrp.Use(middleware.Auth(), middleware.VerifyToken())
 	postGrp.POST("/create", controller.CreatePostHandler)
+	postGrp.DELETE("/remove", controller.PostRemoveHandler)
 	postGrp.GET("/:post_id", controller.PostDetailHandler)
 	postGrp.POST("/vote", controller.PostVoteHandler)
 

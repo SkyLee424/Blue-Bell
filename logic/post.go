@@ -361,6 +361,17 @@ func GetPostListByIDs(postIDs []string) ([]*models.PostDTO, error) {
 	return list, nil
 }
 
+func GetPostListByAuthorID(params models.ParamUserPostList) (int, []*models.PostDTO, error) {
+	start := (params.PageNum - 1) * params.PageSize
+
+	postList, err := mysql.SelectPostsByAuthorID(params.UserID, start, params.PageSize)
+	if err != nil {
+		return 0, nil, errors.Wrap(err, "logic:GetPostListByAuthorID: SelectPostsByAuthorID")
+	}
+	total, err := mysql.SelectPostCountByAuthorID(params.UserID)
+	return total, postList, errors.Wrap(err, "logic:GetPostListByAuthorID: SelectPostCountByAuthorID")
+}
+
 func GetHotPostList() ([]*models.PostDTO, error) {
 	posts, err := localcache.GetLocalCache().Get("hotposts")
 	if err != nil { // cache miss
@@ -379,6 +390,95 @@ func GetHotPostList() ([]*models.PostDTO, error) {
 	}
 
 	return posts.([]*models.PostDTO), nil
+}
+
+func RemovePost(userID int64, params models.ParamPostRemove) error {
+	// 鉴权
+	// 1. 获取 Post 的元数据（author_id、status）
+	post, err := mysql.SelectPostDetailByID(params.PostID)
+	if err != nil {
+		return errors.Wrap(err, "logic:RemovePost: SelectPostDetailByID")
+	}
+	// 2. 判断 user_id 与 author_id 是否相等
+	// 后续可以引入管理员
+	if userID != post.UserID {
+		return bluebell.ErrForbidden
+	}
+
+	// 删除 Post
+	// 事务删除
+	// 判断 status
+	tx := mysql.GetDB().Begin()
+	if err := mysql.DeletePostDetailByPostID(tx, post.PostID); err != nil {
+		tx.Rollback()
+		return errors.Wrap(err, "logic:RemovePost: DeletePostDetailByPostID")
+	}
+	// 如果为 0，说明帖子没有过期，删除 post 表对应记录即可
+	// 如果为 1，说明帖子过期，除了删除 post 表对应记录，还要删除 expired_post_scores 对应记录
+	if post.Status == 1 {
+		if err := mysql.DeletePostExpiredScoresByPostID(tx, post.PostID); err != nil {
+			tx.Rollback()
+			return errors.Wrap(err, "logic:RemovePost: DeletePostExpiredScoresByPostID")
+		}
+	}
+	tx.Commit()
+
+	// 判断 status，如果为 0，还要删除 redis 中的相关记录
+	// 删除失败，简单处理如下：重试 5 次，每次间隔时间从 1s 开始指数增加
+	// 后续可以引入消息队列，可以重新入队
+	if post.Status == 0 {
+		postIDStr := strconv.FormatInt(post.PostID, 10)
+		tmp := []string{postIDStr}
+
+		success := make([]bool, 4)
+		duration := 1
+		retry := 0
+		maxRetry := 5
+
+		for ; retry < maxRetry; retry++ {
+			if retry > 0 {
+				time.Sleep(time.Second * time.Duration(duration))
+			}
+			// 删除 score
+			if !success[0] {
+				if err = redis.DeletePostScores(tmp); err != nil {
+					continue
+				}
+				success[0] = true
+			}
+			// 删除 post_time
+			if !success[1] {
+				if err = redis.DeletePostTimes(tmp); err != nil {
+					continue
+				}
+				success[1] = true
+			}
+			// 删除 voted:post_id
+			if !success[2] {
+				if err = redis.DeletePostVotedNums(tmp); err != nil {
+					continue
+				}
+				success[2] = true
+			}
+			if !success[3] {
+				if err = redis.DeletePostInCommunity(post.CommunityID, tmp); err != nil {
+					continue
+				}
+				success[3] = true
+			}
+			break
+		}
+
+		if retry == maxRetry {
+			return errors.Wrap(err, "logic:RemovePost: Remove post metadata failed")
+		}
+	}
+
+
+	// 删除本地缓存
+	cacheKey := fmt.Sprintf("%v_%v", objects.ObjPost, post.PostID)
+	localcache.GetLocalCache().Remove(cacheKey)
+	return nil
 }
 
 type ReturnValueFromSearch struct {

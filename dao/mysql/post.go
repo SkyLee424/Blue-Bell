@@ -114,9 +114,44 @@ func SelectPostVoteNumsByIDs(postIDs []string) ([]int64, error) {
 	return voteNums, nil
 }
 
+func SelectPostsByAuthorID(authorID int64, start, size int) ([]*models.PostDTO, error) {
+	postList := make([]*models.PostDTO, 0)
+	contentLength := viper.GetInt64("service.post.content_max_length")
+	sqlStr := `select post_id, title, created_at, substr(content, 1, ?) as content
+	from posts
+	where author_id = ?
+	limit ? offset ?`
+	// res := db.Model(&models.Post{}).Select("post_id", "title", "created_at", "status").Where("author_id = ?", authorID).Limit(size).Offset(start).Scan(&postList)
+	res := db.Raw(sqlStr, contentLength, authorID, size, start).Scan(&postList)
+	
+	return postList, errors.Wrap(res.Error, "mysql: SelectPostsByAuthorID")
+} 
+
+func SelectPostCountByAuthorID(authorID int64) (int, error) {
+	total := 0
+	res := db.Model(&models.Post{}).Select("count(*)").Where("author_id = ?", authorID).Scan(&total)
+	
+	return total, errors.Wrap(res.Error, "mysql:SelectPostCountByAuthorID")
+}
+
 func UpdatePostStatusByPostIDs(tx *gorm.DB, status int8, postIDs []string) error {
 	useDB := getUseDB(tx)
 	res := useDB.Model(&models.Post{}).Where("post_id in ?", postIDs).Update("status", status) // 走主键索引
 
 	return errors.Wrap(res.Error, "update post status by post_ids")
 }
+
+func DeletePostDetailByPostID(tx *gorm.DB, postID int64) error {
+	useDB := getUseDB(tx)
+	res := useDB.Delete(&models.Post{}, "post_id = ?", postID)
+	
+	return errors.Wrap(res.Error, "mysql:DeletePostDetailByPostID")
+}
+
+func DeletePostExpiredScoresByPostID(tx *gorm.DB, postID int64) error {
+	useDB := getUseDB(tx)
+	res := useDB.Delete(&models.ExpiredPostScore{}, "post_id = ?", postID)
+	
+	return errors.Wrap(res.Error, "mysql:DeletePostExpiredScoresByPostID")
+}
+
