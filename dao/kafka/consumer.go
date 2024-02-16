@@ -132,6 +132,9 @@ func convertAndConsume(tx *gorm.DB, consumer *kafka.Reader, msg kafka.Message) (
 	case TypeCommentRemove:
 		return handleCommentRemove(tx, data)
 
+	case TypeCommentRemoveByObjID:
+		return handleCommentRemoveByObjID(tx, data)
+
 	case TypeLikeOrHateIncr:
 		return handleLikeOrHateIncr(tx, data)
 
@@ -195,6 +198,20 @@ func handleCommentRemove(tx *gorm.DB, data []byte) (string, int, error) {
 	res := removeComment(tx, params)
 	if res.Err != nil {
 		return "", ErrTypeTransaction, errors.Wrap(res.Err, "kafka:handleCommentRemove: removeComment")
+	}
+
+	return res.UniqueKey, ErrTypeNoError, nil
+}
+
+func handleCommentRemoveByObjID(tx *gorm.DB, data []byte) (string, int, error) {
+	var params CommentRemoveByObjID
+	err := json.Unmarshal(data, &params)
+	if err != nil {
+		return "", ErrTypeConvert, errors.Wrap(err, "kafka:handleCommentRemoveByObjID: Unmarshal(params)")
+	}
+	res := removeCommentsByObjID(tx, params)
+	if res.Err != nil {
+		return "", ErrTypeTransaction, errors.Wrap(res.Err, "kafka:handleCommentRemoveByObjID: removeCommentsByObjID")
 	}
 
 	return res.UniqueKey, ErrTypeNoError, nil

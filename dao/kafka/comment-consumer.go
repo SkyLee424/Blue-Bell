@@ -226,3 +226,58 @@ func removeComment(tx *gorm.DB, params CommentRemove) (res Result) {
 
 	return
 }
+
+func removeCommentsByObjID(tx *gorm.DB, params CommentRemoveByObjID) (res Result) {
+	// 先获取待删除的所有 commentID（删除 redis 中的数据会用到）
+	commentIDs, err := mysql.SelectCommentIDsByObjID(nil, params.ObjID, params.ObjType)
+	if err != nil {
+		res.Err = errors.Wrap(err, "kafka:removeCommentsByObjID: SelectCommentIDsByObjID")
+		return
+	}
+
+	// 先删 db
+	// 删除 comment_subjects 表
+	if err := mysql.DeleteCommentSubjectByObjID(tx, params.ObjID, params.ObjType); err != nil {
+		res.Err = errors.Wrap(err, "kafka:removeCommentsByObjID: DeleteCommentSubjectByObjID")
+		return
+	}
+	// 删除 comment_indices 表
+	if err := mysql.DeleteCommentIndexByObjID(tx, params.ObjID, params.ObjType); err != nil {
+		res.Err = errors.Wrap(err, "kafka:removeCommentsByObjID: DeleteCommentIndexByObjID")
+		return
+	}
+	// 删除 comment_content 表
+	if err := mysql.DeleteCommentContentByCommentIDs(tx, commentIDs); err != nil {
+		res.Err = errors.Wrap(err, "kafka:removeCommentsByObjID: DeleteCommentContentByObjID")
+		return
+	}
+	// 删除 comment_user_like_mappings 表
+	if err := mysql.DeleteCommentUserLikeMappingByObjID(tx, params.ObjID, params.ObjType); err != nil {
+		res.Err = errors.Wrap(err, "kafka:removeCommentsByObjID: DeleteCommentUserLikeMappingByObjID")
+		return
+	}
+	// 删除 comment_user_hate_mappings 表	
+	if err := mysql.DeleteCommentUserHateMappingByObjID(tx, params.ObjID, params.ObjType); err != nil {
+		res.Err = errors.Wrap(err, "kafka:removeCommentsByObjID: DeleteCommentUserHateMappingByObjID")
+		return
+	}
+
+	// 删 redis
+	redis.DelCommentIndexByObjID(params.ObjType, params.ObjID)
+	redis.DelCommentContentsByCommentIDs(commentIDs)
+	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, true)
+	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, false)
+	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, true)
+	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, false)
+
+	// 删 localcache
+	for i := 0; i < len(commentIDs); i++ {
+		cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, commentIDs[i])
+		localcache.GetLocalCache().Remove(cacheKey)
+		cacheKey = fmt.Sprintf("%v_%v_replies", objects.ObjComment, commentIDs[i])
+		localcache.GetLocalCache().Remove(cacheKey)
+		localcache.RemoveObjectView(objects.ObjComment, commentIDs[i])
+	}
+
+	return
+}

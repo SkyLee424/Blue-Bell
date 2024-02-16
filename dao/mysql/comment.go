@@ -202,6 +202,15 @@ func SelectUserIDByCommentID(tx *gorm.DB, commentID int64) (int64, error) {
 	return userID, errors.Wrap(res.Error, "mysql: SelectUserIDByCommentID")
 }
 
+func SelectCommentIDsByObjID(tx *gorm.DB, objID int64, objType int8) ([]int64, error) {
+	useDB := getUseDB(tx)	
+
+	commentIDs := make([]int64, 0)
+	res := useDB.Model(&models.CommentIndex{}).Select("id").Where("obj_id = ? AND obj_type = ?", objID, objType).Scan(&commentIDs)
+	
+	return commentIDs, errors.Wrap(res.Error, "mysql:SelectCommentIDsByObjID")
+}
+
 func CheckIsRootComment(tx *gorm.DB, commentID int64) (bool, error) {
 	useDB := getUseDB(tx)
 
@@ -248,7 +257,7 @@ func DeleteCommentIndexByCommentIDs(tx *gorm.DB, commentIDs []int64) error {
 
 func DeleteCommentContentByCommentIDs(tx *gorm.DB, commentIDs []int64) error {
 	useDB := getUseDB(tx)
-	res := useDB.Delete(&models.CommentContent{}, commentIDs)
+	res := useDB.Delete(&models.CommentContent{}, "comment_id in ?", commentIDs)
 	return errors.Wrap(res.Error, "mysql: DeleteCommentContentByCommentIDs")
 }
 
@@ -262,6 +271,30 @@ func DeleteCommentUserHateMappingByCommentIDs(tx *gorm.DB, commentIDs []int64) e
 	useDB := getUseDB(tx)
 	res := useDB.Delete(&models.CommentUserHateMapping{}, "comment_id in ?", commentIDs)
 	return errors.Wrap(res.Error, "mysql: DeleteCommentUserHateMappingByCommentIDs")
+}
+
+func DeleteCommentSubjectByObjID(tx *gorm.DB, objID int64, objType int8) error {
+	useDB := getUseDB(tx)
+	res := useDB.Delete(&models.CommentSubject{}, "obj_id = ? AND obj_type = ?", objID, objType)
+	return errors.Wrap(res.Error, "mysql: DeleteCommentSubjectByObjID")
+}
+
+func DeleteCommentIndexByObjID(tx *gorm.DB, objID int64, objType int8) error {
+	useDB := getUseDB(tx)
+	res := useDB.Delete(&models.CommentIndex{}, "obj_id = ? AND obj_type = ?", objID, objType)
+	return errors.Wrap(res.Error, "mysql: DeleteCommentIndexByObjID")
+}
+
+func DeleteCommentUserLikeMappingByObjID(tx *gorm.DB, objID int64, objType int8) error {
+	useDB := getUseDB(tx)
+	res := useDB.Delete(&models.CommentUserLikeMapping{}, "obj_id = ? AND obj_type = ?", objID, objType)
+	return errors.Wrap(res.Error, "mysql: DeleteCommentUserLikeMappingByObjID")
+}
+
+func DeleteCommentUserHateMappingByObjID(tx *gorm.DB, objID int64, objType int8) error {
+	useDB := getUseDB(tx)
+	res := useDB.Delete(&models.CommentUserHateMapping{}, "obj_id = ? AND obj_type = ?", objID, objType)
+	return errors.Wrap(res.Error, "mysql: DeleteCommentUserHateMappingByObjID")
 }
 
 func SelectCommentUserLikeOrHateList(tx *gorm.DB, userID, ObjID int64, ObjType int8, Like bool) ([]int64, error) {

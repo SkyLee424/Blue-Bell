@@ -15,6 +15,7 @@ import (
 const (
 	TypeCommentCreate = iota + 1
 	TypeCommentRemove
+	TypeCommentRemoveByObjID
 	TypeLikeOrHateIncr
 	TypeLikeOrHateMappingCreate
 	TypeLikeOrHateMappingRemove

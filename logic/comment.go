@@ -154,6 +154,15 @@ func RemoveComment(params *models.ParamCommentRemove, userID int64) error {
 	return nil
 }
 
+func RemoveCommentsByObjID(objID int64, objType int8) error {
+	go func() {
+		if err := kafka.RemoveCommentsByObjID(objID, objType); err != nil {
+			logger.Errorf("logic:RemoveCommentsByObjID: send message to kafka failed, reason: %v", err.Error())
+		}
+	}()
+
+	return nil
+}
 
 var (
 	commentCache = make(map[string]*sync.Mutex)

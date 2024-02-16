@@ -91,6 +91,16 @@ func RemCommentIndexMembersByCommentID(objType int8, objID int64, commentID int6
 	return errors.Wrap(cmd.Err(), "redis:RemCommentIndexMembersByCommentIDs: SRem")
 }
 
+func DelCommentIndexByObjID(objType int8, objID int64) error {
+	key := fmt.Sprintf("%v%v_%v", KeyCommentIndexZSetPF, objType, objID)
+
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+	
+	cmd := rdb.Del(ctx, key)
+	return errors.Wrap(cmd.Err(), "redis:DelCommentIndexByObjID: Del")
+}
+
 /* bluebell:comment:content: */
 func AddCommentContents(commentIDs []int64, content []string) error {
 	if len(commentIDs) != len(content) {

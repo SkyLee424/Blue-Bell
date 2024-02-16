@@ -38,3 +38,14 @@ func RemoveComment(params models.ParamCommentRemove, userID int64, commentIDs []
 	err := writeMessage(commentWriter, TopicComment, strconv.Itoa(int(content.CommentID)), TypeCommentRemove, content)
 	return errors.Wrap(err, "kafka-producer:RemoveComment: writeMessage")
 }
+
+func RemoveCommentsByObjID(objID int64, objType int8) error {
+
+	content := CommentRemoveByObjID{
+		ObjID:   objID,
+		ObjType: objType,
+	}
+
+	err := writeMessage(commentWriter, TopicComment, strconv.Itoa(int(content.ObjID)), TypeCommentRemoveByObjID, content)
+	return errors.Wrap(err, "kafka-producer:RemoveCommentsByObjID: writeMessage")
+}

@@ -18,3 +18,8 @@ type CommentRemove struct {
 	UserID     int64    `json:"user_id,string"`
 	IsRoot     bool     `json:"is_root"`
 }
+
+type CommentRemoveByObjID struct {
+	ObjID      int64    `json:"obj_id,string"`
+	ObjType    int8     `json:"obj_type"`
+}
