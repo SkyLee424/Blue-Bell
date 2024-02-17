@@ -14,13 +14,21 @@ import (
 )
 
 func UserRegist(usr *models.User) (string, string, error) {
-	// 查询用户是否存在
-	exist, _, err := checkUserIfExist(usr.UserName)
+	// 查询用户名是否存在
+	exist, _, err := checkUserIfExist(usr.UserName, true)
 	if err != nil {
 		return "", "", errors.Wrap(err, "logic:UserLogin: checkUserIfExist")
 	}
 	if exist {
 		return "", "", bluebell.ErrUserExist
+	}
+	// 查询邮箱是否存在
+	exist, _, err = checkUserIfExist(usr.Email, false)
+	if err != nil {
+		return "", "", errors.Wrap(err, "logic:UserLogin: checkUserIfExist")
+	}
+	if exist {
+		return "", "", bluebell.ErrEmailExist
 	}
 
 	// 不存在，新建用户
@@ -42,40 +50,33 @@ func UserRegist(usr *models.User) (string, string, error) {
 	return genTokenHelper(usr.UserID)
 }
 
-func UserLogin(usr *models.User) (string, string, error) {
+func UserLogin(params *models.ParamUserLogin) (*models.User, string, string, error) {
 	// 判断用户是否存在
-	exist, _, err := checkUserIfExist(usr.UserName)
+	exist, _, err := checkUserIfExist(params.Username, true)
 	if err != nil {
-		return "", "", errors.Wrap(err, "logic:UserLogin: checkUserIfExist")
+		return nil, "", "", errors.Wrap(err, "logic:UserLogin: checkUserIfExist")
 	}
 	if !exist {
-		return "", "", bluebell.ErrUserNotExist
+		return nil, "", "", bluebell.ErrUserNotExist
 	}
 
 	// 查询、解析密码
-	_usr, err := mysql.SelectUserByName(usr.UserName)
+	_usr, err := mysql.SelectUserByName(params.Username)
 	if err != nil {
-		return "", "", err
+		return nil, "", "", err
 	}
 
 	// 验证密码一致性
-	if err := bcrypt.CompareHashAndPassword([]byte(_usr.Password), []byte(usr.Password)); err != nil {
-		return "", "", bluebell.ErrWrongPassword
+	if err := bcrypt.CompareHashAndPassword([]byte(_usr.Password), []byte(params.Password)); err != nil {
+		return nil, "", "", bluebell.ErrWrongPassword
 	}
 
-	usr.UserID = _usr.UserID
-	usr.Avatar = _usr.Avatar
-	usr.Gender = _usr.Gender
-	usr.Email = _usr.Email
-	usr.Intro = _usr.Intro
-
-	// 刷新 access_token、refresh_token 并返回
 	access_token, refresh_token, err := genTokenHelper(_usr.UserID)
-	return access_token, refresh_token, errors.Wrap(err, "logic:UserLogin: genTokenHelper")
+	return _usr, access_token, refresh_token, errors.Wrap(err, "logic:UserLogin: genTokenHelper")
 }
 
 func UserUpdate(userID int64, params models.ParamUserUpdate) error {
-	exist, _userID, err := checkUserIfExist(params.Username)
+	exist, _userID, err := checkUserIfExist(params.Username, true)
 	if err != nil {
 		return errors.Wrap(err, "logic:UserUpdate: CheckUserIfExist")
 	}
@@ -97,12 +98,12 @@ func UserGetInfo(userID int64) (*models.UserDTO, error) {
 	}
 
 	return &models.UserDTO{
-		UserID: userID,
+		UserID:   userID,
 		UserName: user.UserName,
-		Email: user.Email,
-		Gender: user.Gender,
-		Avatar: user.Avatar,
-		Intro: user.Intro,
+		Email:    user.Email,
+		Gender:   user.Gender,
+		Avatar:   user.Avatar,
+		Intro:    user.Intro,
 	}, nil
 }
 
@@ -127,8 +128,17 @@ func genTokenHelper(UserID int64) (string, string, error) {
 	return access_token, refresh_token, nil
 }
 
-func checkUserIfExist(username string) (bool, int64, error) {
-	usr, err := mysql.SelectUserByName(username)
+// 判断用户是否存在
+func checkUserIfExist(param string, isUserName bool) (bool, int64, error) {
+	var usr *models.User
+	var err error
+
+	if isUserName {
+		usr, err = mysql.SelectUserByName(param)
+	} else {
+		usr, err = mysql.SelectUserByEmail(param)
+	}
+
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, 0, nil // 不存在

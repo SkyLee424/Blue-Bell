@@ -22,6 +22,14 @@ func SelectUserByName(name string) (usr *models.User, err error) {
 	return usr, nil
 }
 
+func SelectUserByEmail(email string) (usr *models.User, err error) {
+	res := db.First(&usr, "email = ?", email)
+	if res.Error != nil {
+		return nil, errors.Wrap(res.Error, "query failed")
+	}
+	return usr, nil
+}
+
 func InsertUser(usr *models.User) error {
 	res := db.Create(&usr)
 	if res.Error != nil {

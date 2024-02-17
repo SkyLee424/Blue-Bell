@@ -34,4 +34,5 @@ var (
 
 	// email
 	ErrInvalidVerificationCode = errors.New("无效验证码")
+	ErrEmailExist = errors.New("邮箱已存在")
 )

@@ -9,6 +9,8 @@ type ParamUserRegist struct {
 	Username   string `json:"username" binding:"required,min=3,max=64"`
 	Password   string `json:"password" binding:"required,min=6,max=64"`
 	RePassword string `json:"re_password" binding:"required,eqfield=Password"`
+	Email      string `json:"email" binding:"required,min=1,max=256"`
+	Avatar     string `json:"avatar" binding:"required,max=512"`
 }
 
 type ParamUserLogin struct {

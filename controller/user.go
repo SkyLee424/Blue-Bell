@@ -36,10 +36,17 @@ func UserRegisterHandler(ctx *gin.Context) {
 	}
 
 	// 注册
-	access_token, refresh_token, err := logic.UserRegist(&models.User{UserName: usr.Username, Password: usr.Password})
+	access_token, refresh_token, err := logic.UserRegist(&models.User{
+		UserName: usr.Username, 
+		Password: usr.Password, 
+		Email: usr.Email,
+		Avatar: usr.Avatar,
+	})
 	if err != nil {
 		if errors.Is(err, bluebell.ErrUserExist) {
 			common.ResponseError(ctx, common.CodeUserExist)
+		} else if errors.Is(err, bluebell.ErrEmailExist) {
+			common.ResponseErrorWithMsg(ctx, common.CodeUserExist, "邮箱已经被注册")
 		} else {
 			common.ResponseError(ctx, common.CodeInternalErr)
 			// 打日志
@@ -66,15 +73,15 @@ func UserRegisterHandler(ctx *gin.Context) {
 //	@Router			/user/login [post]
 func UserLoginHandler(ctx *gin.Context) {
 	// 解析、校验数据
-	var usr models.User
-	if err := ctx.ShouldBindJSON(&usr); err != nil {
+	var params models.ParamUserLogin
+	if err := ctx.ShouldBindJSON(&params); err != nil {
 		msg := utils.ParseToValidationError(err)
 		common.ResponseErrorWithMsg(ctx, common.CodeInvalidParam, msg)
 		return
 	}
 
 	// 登录
-	access_token, refresh_token, err := logic.UserLogin(&usr)
+	usr, access_token, refresh_token, err := logic.UserLogin(&params)
 	if err != nil {
 		if errors.Is(err, bluebell.ErrUserNotExist) {
 			common.ResponseError(ctx, common.CodeUserNotExist)
