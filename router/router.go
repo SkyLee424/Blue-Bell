@@ -46,6 +46,10 @@ func Init() {
 	usrGrp := v1.Group("/user")
 	usrGrp.POST("/register", controller.UserRegisterHandler)
 	usrGrp.POST("/login", controller.UserLoginHandler)
+	usrGrp.POST("/update", middleware.Auth(), middleware.VerifyToken(), controller.UserUpdateHandler)
+	usrGrp.GET("/info", middleware.Auth(), middleware.VerifyToken(), controller.UserInfoHandler)
+	usrGrp.GET("/:user_id", controller.UserHomeHandler)
+	usrGrp.GET("/posts", controller.UserGetPostListHandler)
 
 	/* Community */
 	communityGrp := v1.Group("/community")

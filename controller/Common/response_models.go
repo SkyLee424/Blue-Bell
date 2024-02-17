@@ -10,8 +10,21 @@ type ResponseTokens struct {
 type ResponseUserLogin struct {
 	UserName     string `json:"user_name"`
 	UserID       int64  `json:"user_id,string"`
+	Avatar       string `json:"avatar"`
+	Email        string `json:"email"`
+	Gender       int8   `json:"gender"`
+	Intro        string `json:"intro"`
 	AccessToken  string `json:"access_token,omitempty"`
 	RefreshToken string `json:"refresh_token,omitempty"`
+}
+
+type ResponseUserInfo struct {
+	UserName string           `json:"user_name"`
+	Avatar   string           `json:"avatar"`
+	Email    string           `json:"email"`
+	Gender   int8             `json:"gender"`
+	Intro    string           `json:"intro"`
+	Posts    []models.PostDTO `json:"posts"`
 }
 
 type ResponsePostDetail struct {

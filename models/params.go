@@ -16,6 +16,19 @@ type ParamUserLogin struct {
 	Password string `json:"password" binding:"required,min=6,max=64"`
 }
 
+type ParamUserUpdate struct {
+	Username string `json:"username" binding:"required,min=3,max=64"`
+	Gender   int8   `json:"gender" binding:"required,min=1,max=3"`
+	Avatar   string `json:"avatar" binding:"required"`
+	Intro    string `json:"intro" binding:"required,min=1,max=128"`
+}
+
+type ParamUserPostList struct {
+	UserID   int64 `form:"user_id" binding:"required"`
+	PageNum  int   `form:"page"`
+	PageSize int   `form:"size"`
+}
+
 /* Post */
 type ParamCreatePost struct {
 	CommunityID int64  `json:"community_id" binding:"required"`
@@ -40,6 +53,10 @@ type ParamPostListByKeyword struct {
 	PageSize int64  `form:"size" binding:"gt=0" example:"10"`         // 每页展示的 post 的数量
 	OrderBy  string `form:"orderby" binding:"oneof=time correlation"` // 排序方式
 	Keyword  string `form:"keyword" binding:"required"`               // 关键字
+}
+
+type ParamPostRemove struct {
+	PostID int64 `form:"post_id,string" binding:"required"`
 }
 
 /* Comment */
