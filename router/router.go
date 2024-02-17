@@ -91,6 +91,11 @@ func Init() {
 	qiniuGrp.Use(middleware.Auth(), middleware.VerifyToken())
 	qiniuGrp.GET("/upload/gentoken", controller.QiniuGenUploadTokenHandler)
 	v1.POST("/qiniu/upload/callback", controller.QiniuUploadCallbackHandler) // 这里不需要鉴权
+
+	/* Email */
+	emailGrp := v1.Group("/email")
+	emailGrp.POST("/verification", controller.EmailSendVerificationCodeHandler)
+	emailGrp.GET("/verification", controller.EmailGetVerificationCodeHandler)
 }
 
 func GetServer() *http.Server {

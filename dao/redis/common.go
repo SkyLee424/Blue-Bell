@@ -33,6 +33,9 @@ const (
 	KeyCommentUserLikeIDsPF   = "bluebell:comment:userlikeids:" // param uid_oid_otype, member: comment_id
 	KeyCommentUserHateIDsPF   = "bluebell:comment:userhateids:" // param uid_oid_otype, member: comment_id
 	KeyCommentRemCidSet       = "bluebell:comment:rem:cid"      // member: comment_id
+
+	// email
+	KeyEmailVerificationCodeStringPF = "bluebell:email:verification:" // param: user_email, value: verification_code
 )
 
 var Nil = redis.Nil

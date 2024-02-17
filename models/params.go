@@ -106,3 +106,13 @@ type ParamCommunityCreate struct {
 	CommunityName string `json:"community_name" binding:"required"`
 	Introduction  string `json:"introduction" binding:"required"`
 }
+
+/* Email */
+type ParamSendEmailVerificationCode struct {
+	Email string `form:"email" binding:"required"`
+}
+
+type ParamVerifyEmailVerificationCode struct {
+	Email string `form:"email" binding:"required"`
+	Code  string `form:"code" binding:"required"`
+}

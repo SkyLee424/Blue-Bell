@@ -31,4 +31,7 @@ var (
 
 	// permissions
 	ErrForbidden = errors.New("禁止访问")
+
+	// email
+	ErrInvalidVerificationCode = errors.New("无效验证码")
 )

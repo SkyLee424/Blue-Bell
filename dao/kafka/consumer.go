@@ -143,6 +143,9 @@ func convertAndConsume(tx *gorm.DB, consumer *kafka.Reader, msg kafka.Message) (
 
 	case TypeLikeOrHateMappingRemove:
 		return handleLikeOrHateMappingRemove(tx, data)
+
+	case TypeEmailSendVerificationCode:
+		return handleEmailSendVerificationCode(data)
 	}
 
 	return res.UniqueKey, ErrTypeNoError, nil
@@ -258,6 +261,24 @@ func handleLikeOrHateMappingRemove(tx *gorm.DB, data []byte) (string, int, error
 	res := removeCommentUserLikeMappingByCommentIDs(tx, params.CommentID)
 	if res.Err != nil {
 		return "", ErrTypeTransaction, errors.Wrap(res.Err, "kafka:handleLikeOrHateMappingRemoveByCommentIDs: incrCommentIndexCountField")
+	}
+
+	return res.UniqueKey, ErrTypeNoError, nil
+}
+
+func handleEmailSendVerificationCode(data []byte) (string, int, error) {
+	var params EmailSendVerificationCode
+	err := json.Unmarshal(data, &params)
+	if err != nil {
+		return "", ErrTypeConvert, errors.Wrap(err, "kafka:handleEmailSend: Unmarshal(params)")
+	}
+
+	if err != nil {
+		return "", ErrTypeConvert, errors.Wrap(err, "kafka:handleEmailSend: ConvertStringSliceToInt64Slice")
+	}
+	res := sendEmailVerificationCode(params)
+	if res.Err != nil {
+		return "", ErrTypeTransaction, errors.Wrap(res.Err, "kafka:handleEmailSend: sendEmail")
 	}
 
 	return res.UniqueKey, ErrTypeNoError, nil

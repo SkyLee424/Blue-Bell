@@ -3,6 +3,7 @@ package main
 import (
 	"bluebell/dao/bleve"
 	"bluebell/dao/elasticsearch"
+	"bluebell/dao/email"
 	"bluebell/dao/kafka"
 	"bluebell/dao/localcache"
 	"bluebell/dao/mysql"
@@ -58,6 +59,9 @@ func init() {
 
 	qiniu.InitQiniuConfig()
 	logger.Infof("Initializing Qiniu Config successfully")
+
+	email.InitEmail()
+	logger.Infof("Initializing Email Service successfully")
 
 	router.Init()
 	logger.Infof("Initializing router successfully")

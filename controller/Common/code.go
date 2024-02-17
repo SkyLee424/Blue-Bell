@@ -27,6 +27,8 @@ const (
 
 	CodeForbidden
 	CodeTimeOut
+
+	CodeInvalidVerificationCode
 )
 
 var codeMsgMap = map[Code]string{
@@ -54,6 +56,8 @@ var codeMsgMap = map[Code]string{
 
 	CodeForbidden: "禁止访问",
 	CodeTimeOut: "请求超时",
+
+	CodeInvalidVerificationCode: "无效验证码",
 }
 
 func (c Code) getMsg() string {
