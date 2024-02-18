@@ -58,15 +58,38 @@ type CommentUserHateMapping struct {
 	UpdatedAt Time  `gorm:"type:timestamp default CURRENT_TIMESTAMP" json:"update_at"`
 }
 
+type CommentIndexDTO struct {
+	ID            int64  `json:"id"`
+	ObjID         int64  `json:"obj_id"`
+	ObjType       int8   `json:"obj_type"`
+	Root          int64  `json:"root"`
+	Parent        int64  `json:"parent"`
+	UserID        int64  `json:"user_id"`
+	UserName      string `json:"user_name"`
+	Avatar        string `json:"avatar"`
+	Floor         int    `json:"floor"`
+	Count         int    `json:"count"`
+	RootCount     int    `json:"root_count"`
+	Like          int    `json:"like"`
+	Hate          int    `json:"hate"`
+	Status        int8   `json:"status"`
+	AuthorLiked   bool   `json:"author_liked"`
+	AuthorReplied bool   `json:"author_replied"`
+	CreatedAt     Time   `json:"created_at"`
+	UpdatedAt     Time   `json:"update_at"`
+}
+
 type CommentDTO struct {
-	CommentID int64 `json:"comment_id,string"`
-	ObjID     int64 `json:"obj_id,string"`
-	Type      int8  `json:"type"`
-	Root      int64 `json:"root,string"`
-	Parent    int64 `json:"parent,string"`
-	UserID    int64 `json:"user_id,string"`
-	Floor     int   `json:"floor"`
-	Like      int   `json:"like"`
+	CommentID int64  `json:"comment_id,string"`
+	ObjID     int64  `json:"obj_id,string"`
+	Type      int8   `json:"type"`
+	Root      int64  `json:"root,string"`
+	Parent    int64  `json:"parent,string"`
+	UserID    int64  `json:"user_id,string"`
+	UserName  string `json:"user_name"`
+	Avatar    string `json:"avatar"`
+	Floor     int    `json:"floor"`
+	Like      int    `json:"like"`
 	Content   struct {
 		Message string `json:"message"`
 	} `json:"content"`

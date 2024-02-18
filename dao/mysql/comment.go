@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func CreateCommentContent(tx * gorm.DB, content *models.CommentContent) error {
+func CreateCommentContent(tx *gorm.DB, content *models.CommentContent) error {
 	useDB := getUseDB(tx)
 
 	res := useDB.Create(&content)
@@ -152,10 +152,10 @@ func SelectFloorsByCommentIDs(tx *gorm.DB, commentIDs []int64) ([]int, error) {
 func SelectCommentMetaDataByCommentIDs(tx *gorm.DB, field string, commentIDs []int64) ([]models.CommentDTO, error) {
 	useDB := getUseDB(tx)
 
-	tmp := make([]models.CommentIndex, 0)
+	tmp := make([]models.CommentIndexDTO, 0)
 
-	subSql := fmt.Sprintf("%v in ?", field)
-	res := useDB.Model(&models.CommentIndex{}).Where(subSql, commentIDs).Scan(&tmp)
+	sql := fmt.Sprintf("select c.*, user_name, avatar from comment_indices c join users u on c.user_id = u.user_id where c.%s in ?", field)
+	res := useDB.Raw(sql, commentIDs).Scan(&tmp)
 
 	if res.Error != nil {
 		return nil, errors.Wrap(res.Error, "mysql: SelectCommentMetaDataByCommentIDs")
@@ -174,7 +174,7 @@ func SelectCommentContentByCommentIDs(tx *gorm.DB, commentIDs []int64) ([]models
 	return contents, errors.Wrap(res.Error, "mysql: SelectCommentContentByCommentIDs")
 }
 
-func selectCommentContentHelper(tmp []models.CommentIndex) []models.CommentDTO {
+func selectCommentContentHelper(tmp []models.CommentIndexDTO) []models.CommentDTO {
 	comments := make([]models.CommentDTO, 0, len(tmp))
 	for i := 0; i < len(tmp); i++ {
 		comments = append(comments, models.CommentDTO{
@@ -184,6 +184,8 @@ func selectCommentContentHelper(tmp []models.CommentIndex) []models.CommentDTO {
 			Root:      tmp[i].Root,
 			Parent:    tmp[i].Parent,
 			UserID:    tmp[i].UserID,
+			UserName:  tmp[i].UserName,
+			Avatar:    tmp[i].Avatar,
 			Floor:     tmp[i].Floor,
 			Like:      tmp[i].Like,
 			CreatedAt: tmp[i].CreatedAt,
@@ -203,11 +205,11 @@ func SelectUserIDByCommentID(tx *gorm.DB, commentID int64) (int64, error) {
 }
 
 func SelectCommentIDsByObjID(tx *gorm.DB, objID int64, objType int8) ([]int64, error) {
-	useDB := getUseDB(tx)	
+	useDB := getUseDB(tx)
 
 	commentIDs := make([]int64, 0)
 	res := useDB.Model(&models.CommentIndex{}).Select("id").Where("obj_id = ? AND obj_type = ?", objID, objType).Scan(&commentIDs)
-	
+
 	return commentIDs, errors.Wrap(res.Error, "mysql:SelectCommentIDsByObjID")
 }
 
