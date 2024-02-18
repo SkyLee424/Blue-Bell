@@ -210,14 +210,32 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 		return errors.Wrap(err, "logic.LikeOrHateForComment.RebuildCommentIndex")
 	}
 
-	// 判断评论是否存在
-	exist, err := redis.CheckCommentIfExist(objType, objID, commentID)
-	if err != nil {
-		return errors.Wrap(err, "logic.LikeOrHateForComment.CheckCommentIfExist")
-	}
-	if !exist {
-		return bluebell.ErrNoSuchComment
-	}
+	/*
+		关于是否应该校验「评论是否存在」这个问题：
+
+		最终得出的结论是不需要校验，理由如下：
+
+		首先大部分请求都是来自前端的，这些请求应该是合法的，即评论是存在的
+		如果每次都校验，意味着必须先读 redis，「可能」会读 db
+		这会带来一定开销，对 db 也造成了压力（给子评论点赞势必读 db，并发高就🐔）
+
+		于是想到用布隆过滤：即缓存「存在的 comment_id」
+		key 为 bluebell:comment:exists:...
+		一个请求来了，判断 comment_id 是否存在于布隆过滤器：
+		
+		- 不存在，reject
+		- 存在，允许下一步操作（这个有一定误差，布隆过滤的性质决定）
+
+		那么问题来了，这个 key 按道理应该设置一个过期时间，如果 key 过期，
+		下一次访问这个 key，肯定要从 db 重建，还是会对 db 造成冲击
+		
+		缓存空对象这个方法就更没意思了，如果攻击者一直换不同的 comment_id，缓存根本不会命中
+		
+		总结：不需要校验评论是否存在，因为：
+		- 大部分请求合法
+		- 使用布隆过滤，避免非法请求，也会带来相似的成本开销
+		- 可以对单个用户限流
+	*/
 	
 	// 判断该用户是否点赞（踩）过
 	pre, err := redis.CheckCommentLikeOrHateIfExistUser(commentID, userID, objID, objType, like)
