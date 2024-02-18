@@ -1,5 +1,24 @@
 # Blue-Bell
 
+2024.2.18 更新：
+
+**用户模块**
+
+- 注册时引入了邮箱验证
+- 修改用户信息（上传用户头像）
+
+**帖子模块**
+
+- 在个人中心展示帖子列表
+- 帖子删除
+- 上传图片
+
+**评论模块**
+
+- 展示用户头像
+
+----
+
 Blue-Bell 是一个使用 Go 语言构建的网络论坛式 Web 项目，目标是提供一个让用户进行交流、分享想法的平台。项目以高性能为核心目标。
 
 ## 使用到的中间件
@@ -290,15 +309,36 @@ POST /_aliases
         "addr":["kafka-4:9093"],
         "partition": {
             "comment": 6,
-            "like": 6
+            "like": 6,
+            "email": 2
         },
         "replication_factor": {
             "comment": 1,
-            "like": 1
+            "like": 1,
+            "email": 1
         },
         "retry":{           // 失败后的重试次数
             "producer": 5,
             "consumer": 5
+        }
+    },
+    "qiniu":{
+        "access_key": "",       // 七牛云的 AK
+        "secret_key": "",       // 七牛云的 SK
+        "scope": "blue-bell",   // 对象空间名称
+        "expires": 60,          // 生成的 update_token 的过期时间（s）
+        "base_url": "",         // 七牛云对象空间的基础 url，例如："http://images.skylee.top/"
+        "callback_base_url": "" // 七牛云回调请求的基础 url，格式为："http://前端 ip:前端 port/"
+    },
+    "email":{           // 邮件使用 SMTP 协议
+        "username": "", // 发送邮箱
+        "password": "", // token
+        "host": "",     // 发送邮件服务器 host
+        "port": 587,    // 发送邮件服务器 port，一般为465或587
+        "verification": {
+            "body_path": "./static/verification.html", // 验证码静态 html 文件路径
+            "length": 6,                               // 验证码长度
+            "expire_time": 120                         // 验证码过期时间
         }
     },
     "localcache":{
@@ -360,6 +400,9 @@ POST /_aliases
     }
 }
 ```
+
+- 有关邮箱发送的问题，可以查看 [这个链接](https://wx.mail.qq.com/list/readtemplate?name=app_intro.html#/agreement/authorizationCode)
+- 有关七牛云的问题，可以查看 [这个链接](https://www.bilibili.com/video/BV1fw411t7eU)
 
 ## Benchmark
 
@@ -494,13 +537,13 @@ wrk -t10 -c100 -d30s -s benchmark_files/benchmark_comment_list.lua http://127.0.
 
 |       | 平均值    | 标准差   | 最大值  | +/- 标准差 |
 |-------|---------|---------|---------|------------|
-| 延迟  | 38.37ms | 10.98ms | 205.42ms | 93.89%     |
-| RPS   |  264.69  | 47.53  |  370.00  | 78.60%     |
+| 延迟  | 35.04ms | 6.29ms | 81.18ms | 85.61%     |
+| RPS   |  286.62  | 41.83  |  383.00  | 72.47%     |
 
-- 总请求数：79144
-- 测试时长：30.04s
-- 请求速率：2634.67 次/秒（Requests/sec）
-- 吞吐量：40.16MB/sec
+- 总请求数：85711
+- 测试时长：30.05s
+- 请求速率：2852.52 次/秒（Requests/sec）
+- 吞吐量：62.54MB/sec
 
 ### 结论
 
@@ -514,10 +557,10 @@ wrk -t10 -c100 -d30s -s benchmark_files/benchmark_comment_list.lua http://127.0.
 
 4. 创建评论的压力测试显示，服务器在 **高写入的环境下仍能保持可用性**，平均延迟为 821.80us，请求速率为 1238.25 次/秒，消费速率约为 200 条/秒
 
-5. 获取评论列表的压力测试表明，尽管根评论总数为 6k+，但获取前 50 条评论的延迟处于较低范围（38.37ms），请求速率也可以达到 2634.67 次/秒
+5. 获取评论列表的压力测试表明，尽管根评论总数为 6k+，但获取前 50 条评论的延迟处于较低范围（38.37ms），请求速率也可以达到 2852.52 次/秒
 
 ----
 
-该项目目前还是一个 demo，还有一些功能没实现，如用户模块仅支持注册和登录功能
+该项目目前还有一些功能没实现，如用户模块的关注、私信，帖子的更新等
 
 后续~~也许~~会补充
