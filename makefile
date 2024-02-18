@@ -3,6 +3,8 @@
 # 设置 Go 可执行文件名
 EXECUTABLE := bluebell
 
+SERVER_EXECUTABLE := bluebell-server
+
 # 设置输出目录
 BUILD_DIR := bin
 
@@ -31,3 +33,6 @@ run:
 
 clean:
 	rm -rf $(BUILD_DIR)
+
+linux:
+	GOOS=linux GOARCH=amd64 $(GO) build -o $(SERVER_EXECUTABLE)
