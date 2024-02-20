@@ -474,6 +474,20 @@ func RemovePost(userID int64, params models.ParamPostRemove) error {
 		}
 	}
 
+	if viper.GetBool("bleve.enable") {
+		// 删 bleve 搜索引擎中的索引
+		err = bleve.DeletePost(params.PostID)
+		if err != nil {
+			logger.Errorf("remove post from bleve failed, reason: %v", err.Error())
+		}
+	}
+	if viper.GetBool("elasticsearch.enable") {
+		// 删 elasticsearch 搜索引擎中的索引
+		err = elasticsearch.DeletePost(params.PostID)
+		if err != nil {
+			logger.Errorf("remove post from elasticsearch failed, reason: %v", err.Error())
+		}
+	}
 
 	// 删除本地缓存
 	cacheKey := fmt.Sprintf("%v_%v", objects.ObjPost, post.PostID)
