@@ -117,7 +117,7 @@ func SelectPostVoteNumsByIDs(postIDs []string) ([]int64, error) {
 func SelectPostsByAuthorID(authorID int64, start, size int) ([]*models.PostDTO, error) {
 	postList := make([]*models.PostDTO, 0)
 	contentLength := viper.GetInt64("service.post.content_max_length")
-	sqlStr := `select post_id, title, created_at, substr(content, 1, ?) as content
+	sqlStr := `select post_id, status, title, created_at, updated_at, substr(content, 1, ?) as content
 	from posts
 	where author_id = ?
 	limit ? offset ?`
