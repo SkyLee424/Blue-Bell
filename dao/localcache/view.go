@@ -2,29 +2,34 @@ package localcache
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
+	"time"
 
 	"github.com/bluele/gcache"
 	priorityqueue "github.com/emirpasic/gods/queues/priorityqueue"
 	"github.com/pkg/errors"
 )
 
-func IncrView(objType int, objID int64, offset int) (bool, error) {
+func IncrView(objType int, objID int64, offset int) error {
 	cacheKey := getCacheKey(objType, objID)
 	view, err := viewCache.Get(cacheKey)
-	if err == nil { // cache hit
-		if view.(int)+offset == 0 {
-			viewCache.Remove(cacheKey)
+	if err != nil {
+		// key 不存在，创建
+		if errors.Is(err, gcache.KeyNotFoundError) {
+			viewCache.Set(cacheKey, viewObj{
+				objID:     objID,
+				objType:   objType,
+				view:      offset,
+				timeStamp: time.Now().Unix(),
+			})
 		} else {
-			viewCache.Set(cacheKey, view.(int)+offset)
+			// 未知错误
+			return errors.Wrap(err, "localcache:IncrView: Get")
 		}
-		return false, nil
-	} else if errors.Is(err, gcache.KeyNotFoundError) { // cache miss
-		return true, errors.Wrap(viewCache.Set(cacheKey, offset), "localcache:IncrView: Set")
-	} else { // other error
-		return false, errors.Wrap(err, "localcache:IncrView: Set")
+		return nil
 	}
+	v := view.(viewObj)
+	v.view += offset
+	return errors.Wrap(viewCache.Set(cacheKey, v), "localcache:IncrView: Set")
 }
 
 func SetViewCreateTime(objType int, objID, timeStamp int64) error {
@@ -37,30 +42,22 @@ func GetTopKObjectIDByViews(objType int, k int) ([]int64, error) {
 
 	// 获取所有的 view
 	all := viewCache.GetALL(false)
-	for key, value := range all {
-		cacheKey := key.(string)
-		view := value.(int)
-		tmp := strings.Split(cacheKey, "_")
-		_objType, _ := strconv.ParseInt(tmp[0], 10, 32)
-		if objType != int(_objType) {
+	for _, value := range all {
+		v := value.(viewObj)
+		if objType != v.objType {
 			continue
-		}
-		objID, _ := strconv.ParseInt(tmp[1], 10, 64)
-		oView := viewObj{
-			objID: objID,
-			view:  view,
 		}
 
 		// TopK 问题
 		if pq.Size() == k {
 			t, _ := pq.Peek()
 			topView := t.(viewObj)
-			if view > topView.view {
+			if v.view > topView.view {
 				pq.Dequeue()
-				pq.Enqueue(oView)
+				pq.Enqueue(v)
 			}
 		} else {
-			pq.Enqueue(oView)
+			pq.Enqueue(v)
 		}
 	}
 
@@ -82,12 +79,13 @@ func RemoveObjectView(objType int, objID int64) bool {
 }
 
 func RemoveExpiredObjectView(targetTimeStamp int64) {
-	all := createTimeCache.GetALL(false)
-	for k, v := range all {
-		cacheKey := k.(string)
-		createTime := v.(int64)
-		if createTime < targetTimeStamp {
-			createTimeCache.Remove(cacheKey)
+	all := viewCache.GetALL(false)
+	for key, val := range all {
+		cacheKey := key.(string)
+		v := val.(viewObj)
+		if v.timeStamp < targetTimeStamp {
+			viewCache.Remove(cacheKey)
+			localcache.Remove(cacheKey)
 		}
 	}
 }
@@ -97,8 +95,10 @@ func getCacheKey(objType int, objID int64) string {
 }
 
 type viewObj struct {
-	objID int64
-	view  int
+	objID     int64
+	objType   int
+	view      int
+	timeStamp int64
 }
 
 func cmp(a, b interface{}) int {
