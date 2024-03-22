@@ -367,16 +367,8 @@ func GetCommentDetailByCommentIDs(isRoot, needIncrView bool, commentIDs []int64)
 			commentIDStr := strconv.FormatInt(commentID, 10)
 			// 递增 view
 			if needIncrView {
-				isNewMember, err := localcache.IncrView(objects.ObjComment, commentID, 1)
-				if err != nil {
+				if err := localcache.IncrView(objects.ObjComment, commentID, 1); err != nil {
 					logger.Warnf("logic:getCommentDetailByCommentIDs: IncrView failed(incr comment view)")
-				} else if isNewMember {
-					if err := localcache.SetViewCreateTime(objects.ObjComment, commentID, time.Now().Unix()); err != nil {
-						logger.Warnf("logic:GetPostDetailByID: SetViewCreateTime(comment) failed")
-						// 应该保证事务一致性原则（回滚 incr 操作）
-						// 这里简单处理，不考虑回滚失败
-						localcache.IncrView(objects.ObjComment, commentID, -1)
-					}
 				}
 			}
 
