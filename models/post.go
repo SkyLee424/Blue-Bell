@@ -4,7 +4,7 @@ type Post struct {
 	ID          int64  `gorm:"type:bigint;auto_increment" json:"id"`
 	PostID      int64  `gorm:"type:bigint;not null;unique" json:"post_id"`
 	CommunityID int64  `gorm:"type:bigint;not null;" json:"community_id" binding:"required"`
-	AuthorID    int64  `gorm:"type:bigint;not null;" json:"author_id"`
+	AuthorID    int64  `gorm:"type:bigint;not null;index:idx_author_id" json:"author_id"`
 	Status      int8   `gorm:"type:tinyint;not null;default 1;" json:"status"`
 	Title       string `gorm:"type:varchar(128);not null;" json:"title" binding:"required"`
 	Content     string `gorm:"type:longtext;not null;" json:"content" binding:"required"`
@@ -22,7 +22,7 @@ type PostDoc struct {
 	PostID    int64  `json:"post_id"`
 	Title     string `json:"title"`
 	Content   string `json:"content"`
-	CreatedAt any   `json:"created_time"`
+	CreatedAt any    `json:"created_time"`
 }
 
 type PostDTO struct {
