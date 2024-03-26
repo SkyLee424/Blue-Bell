@@ -332,6 +332,66 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 	return nil
 }
 
+func LikeOrHateForComment1(userID, commentID, objID int64, objType int8, like bool) error {
+	// 尝试重建 KeyCommentUserLikeIDsPF
+	rebuild.RebuildCommentUserLikeOrHateMapping(userID, objID, objType, like)
+
+	// 执行 lua 脚本
+	// 1. 判断用户是否点赞过
+	liked, err := redis.CheckCommentUserLikeOrHateMappingIfExistComment(commentID, userID, objID, objType, like) // SISMEMBER bluebell:comment:userlikeids:uid_oid_otype comment_id
+	if err != nil {
+		return errors.Wrap(err, "logic:LikeOrHateForComment: CheckCommentLikeOrHateIfExistUser")
+	}
+
+	if liked {
+		// 2.1 如果用户点赞过，执行取消点赞逻辑
+		
+		// 删除 db 的 cid_uid
+		// 这里添加到缓存，由后台任务负责删除
+		// SADD bluebell:comment:rem:cid comment_id
+		if err := redis.AddCommentRemCid(commentID); err != nil {
+			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentRemCidUid")
+		}
+		
+		// 还要删除缓存 bluebell:comment:userlikeids:
+		// SREM bluebell:comment:userlikeids:uid_oid_otype comment_id
+		if err := redis.RemCommentUserLikeOrHateMapping(userID, commentID, objID, objType, like); err != nil {
+			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentLikeOrHateUser")
+		}
+	} else {
+		// 2.2 否则，执行点赞逻辑
+		
+		// 先删可能存在的 bluebell:comment:rem:cid_uid（用户之前取消过点赞）
+		// 防止后台任务将我们刚刚添加的 cid_uid 从 db 删掉（这样会导致可以重复点赞）
+		// SREM bluebell:comment:rem:cid comment_id
+		if err := redis.RemCommentRemCid(commentID); err != nil {
+			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentRemCidUid")
+		}
+		
+		// 写缓存 bluebell:comment:userlike(hate)ids:
+		// SADD bluebell:comment:userlikeids:uid_oid_otype comment_id
+		err = redis.AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID, objType, like, []int64{commentID})
+		if err != nil {
+			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentUserLikeOrHateMapping")
+		}
+	}
+
+	// 3. 修改点赞数
+	offset := 1
+	if liked {
+		offset = -1
+	}
+	if err = redis.IncrCommentLikeOrHateCount(commentID, offset, like); err != nil {
+		return errors.Wrap(err, "logic:LikeOrHateForComment: IncrCommentIndexCountField")
+	}
+
+	// 4. 删除可能存在的本地缓存
+	cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, commentID)
+	localcache.GetLocalCache().Remove(cacheKey)
+	
+	return nil
+}
+
 func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserLikeOrHateList) ([]string, error) {
 	list, rebuilt, err := rebuild.RebuildCommentUserLikeOrHateMapping(userID, params.ObjID, params.ObjType, params.Like)
 	if err != nil {

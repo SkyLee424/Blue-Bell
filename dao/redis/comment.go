@@ -290,6 +290,17 @@ func GetCommentLikeOrHateCountByKeys(keys []string) ([]int, error) {
 }
 
 /* bluebell:comment:userlikeids: */
+func CheckCommentUserLikeOrHateMappingIfExistComment(commentID, userID, objID int64, objType int8, like bool) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	key := getCommentUserLikeOrHateMappingKey(userID, objID, objType, like)
+	
+	cmd := rdb.SIsMember(ctx, key, commentID)
+	
+	return cmd.Val(), errors.Wrap(cmd.Err(), "redis:CheckCommentUserLikeOrHateMappingIfExistComment: SIsMember")
+}
+
 func AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID int64, objType int8, like bool, commentIDs []int64) error {
 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
 	defer cancel()
