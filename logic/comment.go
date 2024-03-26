@@ -335,19 +335,14 @@ func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like boo
 func GetCommentUserLikeOrHateList(userID int64, params *models.ParamCommentUserLikeOrHateList) ([]string, error) {
 	list, rebuilt, err := rebuild.RebuildCommentUserLikeOrHateMapping(userID, params.ObjID, params.ObjType, params.Like)
 	if err != nil {
-		logger.Warnf("logic:GetCommentUserLikeOrHateList: RebuildCommentUserLikeOrHateMapping failed, reason: %s, reading db...", err.Error()) // 重建失败，读 db
-		list, err = mysql.SelectCommentUserLikeOrHateList(nil, userID, params.ObjID, params.ObjType, params.Like)
-		if err != nil { // 读 db 失败，请求失败
-			return nil, errors.Wrap(err, "logic:GetCommentUserLikeOrHateList: SelectCommentUserLikeOrHateList")
-		}
+		logger.Warnf("logic:GetCommentUserLikeOrHateList: RebuildCommentUserLikeOrHateMapping failed, reason: %s, reading db...", err.Error())
+		// 重建失败，说明要么 Redis 忙，要么 DB 忙，不应该读 DB 了，降级
+		return nil, errors.Wrap(err, "ogic:GetCommentUserLikeOrHateList: RebuildCommentUserLikeOrHateMapping")
 	} else if !rebuilt { // 没有重建，读 cache
 		list, err = redis.GetCommentUserLikeOrHateList(userID, params.ObjID, params.ObjType, params.Like)
-		if err != nil { // 读 cache 失败，尝试读 db
-			logger.Warnf("logic:GetCommentUserLikeOrHateList: RebuildCommentUserLikeOrHateMapping failed, reason: %s, reading db...", err.Error()) // 重建失败，读 db
-			list, err = mysql.SelectCommentUserLikeOrHateList(nil, userID, params.ObjID, params.ObjType, params.Like)
-			if err != nil { // 读 db 失败，请求失败
-				return nil, errors.Wrap(err, "logic:GetCommentUserLikeOrHateList: SelectCommentUserLikeOrHateList")
-			}
+		if err != nil { // 读 cache 失败，说明我们的 Server 可能比较忙，降级
+			logger.Warnf("logic:GetCommentUserLikeOrHateList: GetCommentUserLikeOrHateList failed, reason: %s, reading db...", err.Error()) // 重建失败，读 db
+			return nil, errors.Wrap(err, "ogic:GetCommentUserLikeOrHateList: GetCommentUserLikeOrHateList")
 		}
 	}
 	listStr := make([]string, len(list))

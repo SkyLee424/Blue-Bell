@@ -10,7 +10,6 @@ import (
 	"bluebell/models"
 	"bluebell/objects"
 	"fmt"
-	"time"
 
 	"github.com/pkg/errors"
 	"github.com/segmentio/kafka-go"
@@ -123,31 +122,9 @@ func createComment(tx *gorm.DB, msg kafka.Message, params CommentCreate) (res Re
 		if err = redis.AddCommentIndexMembers(params.ObjType, params.ObjID, []int64{params.CommentID}, []int{floor}); err != nil {
 			logger.Warnf("kafka:CreateComment: AddCommentIndexMember, reason: %v", err.Error())
 		}
-	} else { // 判断是否需要更新 local cache
+	} else { // 使用删除缓存来保证一致性
 		cacheKey := fmt.Sprintf("%v_%v_replies", objects.ObjComment, params.Root)
-		replyIDs, err := localcache.GetLocalCache().Get(cacheKey)
-		if err == nil { // cache hit，need update
-			tmp := replyIDs.([]int64)
-			tmp = append(tmp, params.CommentID)
-			localcache.GetLocalCache().Set(cacheKey, tmp)
-			cacheKey = fmt.Sprintf("%v_%v_replies", objects.ObjComment, params.CommentID)
-			localcache.GetLocalCache().Set(cacheKey, models.CommentDTO{
-				CommentID: params.CommentID,
-				ObjID:     params.ObjID,
-				Type:      params.ObjType,
-				Root:      params.Root,
-				Parent:    params.Parent,
-				UserID:    params.UserID,
-				Floor:     floor,
-				Content: struct {
-					Message string "json:\"message\""
-				}{
-					Message: params.Message,
-				},
-				CreatedAt: models.Time(time.Now()),
-				UpdatedAt: models.Time(time.Now()),
-			})
-		}
+		localcache.GetLocalCache().Remove(cacheKey)
 	}
 	if err = redis.AddCommentContents([]int64{params.CommentID}, []string{params.Message}); err != nil {
 		logger.Warnf("kafka:CreateComment: AddCommentContent, reason: %v", err.Error())
