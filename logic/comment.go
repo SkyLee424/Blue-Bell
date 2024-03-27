@@ -198,7 +198,7 @@ func deleteCommentMutex(uid_cid_oid_otype string) {
 	delete(commentCache, uid_cid_oid_otype)
 }
 
-func LikeOrHateForComment1(userID, commentID, objID int64, objType int8, like bool) error {
+func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like bool) error {
 	/*
 	关于是否应该校验「评论是否存在」这个问题：
 
