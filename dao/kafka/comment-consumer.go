@@ -191,8 +191,6 @@ func removeComment(tx *gorm.DB, params CommentRemove) (res Result) {
 	redis.DelCommentContentsByCommentIDs(commentIDs)
 	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, true)
 	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, false)
-	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, true)
-	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, false)
 
 	// 删本地缓存
 	cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, params.CommentID)
@@ -244,8 +242,6 @@ func removeCommentsByObjID(tx *gorm.DB, params CommentRemoveByObjID) (res Result
 	redis.DelCommentContentsByCommentIDs(commentIDs)
 	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, true)
 	redis.DelCommentLikeOrHateCountByCommentIDs(commentIDs, false)
-	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, true)
-	redis.DelCommentLikeOrHateUserByCommentIDs(commentIDs, params.ObjID, params.ObjType, false)
 
 	// 删 localcache
 	for i := 0; i < len(commentIDs); i++ {

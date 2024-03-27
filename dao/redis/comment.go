@@ -161,46 +161,46 @@ func DelCommentContentsByCommentIDs(commentIDs []int64) error {
 }
 
 /* bluebell:comment:likeset: */
-func CheckCommentLikeOrHateIfExistUser(commentID, userID, objID int64, objType int8, like bool) (bool, error) {
-	key := getCommentLikeOrHateSetKey(commentID, objID, objType, like)
+// func CheckCommentLikeOrHateIfExistUser(commentID, userID, objID int64, objType int8, like bool) (bool, error) {
+// 	key := getCommentLikeOrHateSetKey(commentID, objID, objType, like)
 
-	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
-	defer cancel()
+// 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+// 	defer cancel()
 	
-	cmd := rdb.SIsMember(ctx, key, userID)
-	return cmd.Val(), errors.Wrap(cmd.Err(), "redis:CheckCommentLikeOrHateIfExistUser: SIsMember")
-}
+// 	cmd := rdb.SIsMember(ctx, key, userID)
+// 	return cmd.Val(), errors.Wrap(cmd.Err(), "redis:CheckCommentLikeOrHateIfExistUser: SIsMember")
+// }
 
-func AddCommentLikeOrHateUser(commentID, userID, objID int64, objType int8, like bool) error {
-	key := getCommentLikeOrHateSetKey(commentID, objID, objType, like)
+// func AddCommentLikeOrHateUser(commentID, userID, objID int64, objType int8, like bool) error {
+// 	key := getCommentLikeOrHateSetKey(commentID, objID, objType, like)
 
-	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
-	defer cancel()
+// 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+// 	defer cancel()
 
-	cmd := rdb.SAdd(ctx, key, userID)
+// 	cmd := rdb.SAdd(ctx, key, userID)
 
-	return errors.Wrap(cmd.Err(), "redis:AddCommentLikeOrHateUser: SAdd")
-}
+// 	return errors.Wrap(cmd.Err(), "redis:AddCommentLikeOrHateUser: SAdd")
+// }
 
-func RemCommentLikeOrHateUser(commentID, userID, objID int64, objType int8, like bool) error {
-	key := getCommentLikeOrHateSetKey(commentID, objID, objType, like)
+// func RemCommentLikeOrHateUser(commentID, userID, objID int64, objType int8, like bool) error {
+// 	key := getCommentLikeOrHateSetKey(commentID, objID, objType, like)
 
-	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
-	defer cancel()
+// 	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+// 	defer cancel()
 
-	cmd := rdb.SRem(ctx, key, userID)
-	return errors.Wrap(cmd.Err(), "redis:RemCommentLikeOrHateUser: SRem")
-}
+// 	cmd := rdb.SRem(ctx, key, userID)
+// 	return errors.Wrap(cmd.Err(), "redis:RemCommentLikeOrHateUser: SRem")
+// }
 
-// 批量删除指定主题下的评论
-func DelCommentLikeOrHateUserByCommentIDs(commentIDs []int64, objID int64, objType int8, like bool) error {
-	keys := make([]string, len(commentIDs))
-	for i := 0; i < len(keys); i++ {
-		keys[i] = getCommentLikeOrHateSetKey(commentIDs[i], objID, objType, like)
-	}
+// // 批量删除指定主题下的评论
+// func DelCommentLikeOrHateUserByCommentIDs(commentIDs []int64, objID int64, objType int8, like bool) error {
+// 	keys := make([]string, len(commentIDs))
+// 	for i := 0; i < len(keys); i++ {
+// 		keys[i] = getCommentLikeOrHateSetKey(commentIDs[i], objID, objType, like)
+// 	}
 
-	return DelKeys(keys)
-}
+// 	return DelKeys(keys)
+// }
 
 /* bluebell:comment:rem:cid */
 func AddCommentRemCid(commentID int64) error {
@@ -316,12 +316,7 @@ func AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID int64, objType in
 	if err != nil {
 		return errors.Wrap(err, "redis:AddCommentUserLikeOrHateMappingByCommentIDs: SAdd")
 	}
-	expireTime := CommentUserLikeExpireTime
-	if !like {
-		expireTime = CommentUserHateExpireTime
-	}
-	cmd := rdb.Expire(ctx, key, expireTime)
-	return errors.Wrap(cmd.Err(), "redis:AddCommentUserLikeOrHateMappingByCommentIDs: Expire")
+	return nil
 }
 
 func GetCommentUserLikeOrHateList(userID, objID int64, objType int8, like bool) ([]int64, error) {
@@ -354,12 +349,22 @@ func RemCommentUserLikeOrHateMapping(userID, commentID, objID int64, objType int
 	return errors.Wrap(cmd.Err(), "redis:RemCommentUserLikeOrHateMapping: SRem")
 }
 
-func getCommentLikeOrHateSetKey(commentID, objID int64, objType int8, like bool) string {
-	pf := KeyCommentLikeSetPF
-	if !like {
-		pf = KeyCommentHateSetPF
-	}
-	return fmt.Sprintf("%s%d_%d_%d", pf, commentID, objID, objType)
+/* lua */
+
+/* comment_like_or_hate_lua */
+func EvalCommentLikeOrHate(commentID, userID, objID int64, objType int8, like bool) error {
+	keys := []string{
+        getCommentUserLikeOrHateMappingKey(userID, objID, objType, like),
+        KeyCommentRemCidSet,
+        getCommentLikeOrHateStringKey(commentID, like),
+    }
+
+	ctx, cancel := context.WithTimeout(context.Background(), redisTimeout)
+	defer cancel()
+
+	cmd := rdb.EvalSha(ctx, shaCommentLikeOrHate, keys, commentID)
+	
+	return errors.Wrap(cmd.Err(), "redis:EvalCommentLikeOrHate")
 }
 
 func getCommentLikeOrHateStringKey(commentID int64, like bool) string {

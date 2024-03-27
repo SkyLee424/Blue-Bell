@@ -10,22 +10,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-func RebuildCommentLikeOrHateSet(commentID, userID, objID int64, objType int8, like bool) (bool, error) {
-	// 读 db，判断该用户是否给该评论点过赞
-	exist, err := mysql.CheckCidUidIfExist(nil, commentID, userID, like)
-	if err != nil {
-		return false, errors.Wrap(err, "rebuild:RebuildCommentLikeOrHateSet: CheckCidUidIfExist")
-	}
-	if exist {
-		err := redis.AddCommentLikeOrHateUser(commentID, userID, objID, objType, like)
-		if err != nil {
-			return false, errors.Wrap(err, "rebuild:RebuildCommentLikeOrHateSet: AddCommentLikeOrHateUser")
-		}
-		logger.Infof("rebuild:RebuildCommentLikeOrHateSet: Rebuild 1 data from mysql to redis")
-	}
-	return exist, nil
-}
-
 // 如果成功重建，返回 otype_oid 下的所有 comment_id（可以直接使用这个 comment_ids，避免再读一次缓存）
 func RebuildCommentIndex(objType int8, objId int64) error {
 	key := fmt.Sprintf("%v%v_%v", redis.KeyCommentIndexZSetPF, objType, objId)
@@ -109,16 +93,6 @@ func RebuildCommentUserLikeOrHateMapping(userID, objID int64, objType int8, like
 		return nil, false, errors.Wrap(err, "rebuild:RebuildCommentUserLikeOrHateMapping: Exists")
 	}
 	if exist { // 不需要重建
-		// 重置 TTL
-		var err error
-		if like {
-			err = redis.RestoreKeyExpireTime(key, redis.CommentUserLikeExpireTime)
-		} else {
-			err = redis.RestoreKeyExpireTime(key, redis.CommentUserHateExpireTime)
-		}
-		if err != nil {
-			logger.Warnf("rebuild:RebuildCommentUserLikeOrHateMapping: RestoreKeyExpireTime failed")
-		}
 		return nil, false, nil
 	}
 

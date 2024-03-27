@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
 	"github.com/panjf2000/ants/v2"
+	"github.com/spf13/viper"
 )
 
 // 持久化评论的点赞数
@@ -93,10 +93,10 @@ func PersistenceCommentCidUid(like bool) {
 	persistenceInterval := time.Second * time.Duration(viper.GetInt64("service.comment.like_hate_user.persistence_interval"))
 	waitTime := 0 * time.Second
 	tmpStr := "service.comment.like_hate_user.like_expire_time"
-	pf := redis.KeyCommentLikeSetPF
+	pf := redis.KeyCommentUserLikeIDsPF
 	if !like {
 		tmpStr = "service.comment.like_hate_user.hate_expire_time"
-		pf = redis.KeyCommentHateSetPF
+		pf = redis.KeyCommentUserHateIDsPF
 	}
 	expireTime := time.Second * time.Duration(viper.GetInt64(tmpStr))
 
@@ -127,20 +127,23 @@ func PersistenceCommentCidUid(like bool) {
 
 			// 遍历
 			for i := 0; i < len(expiredKeys); i++ {
-				UserIDs, err := redis.GetSetMembersByKey(expiredKeys[i])
+				commentIDs, err := redis.GetSetMembersByKey(expiredKeys[i])
 				if !checkError(err, &waitTime) {
 					continue rootloop
 				}
 
-				tmpStr := utils.Substr(expiredKeys[i], len(redis.KeyCommentLikeSetPF), len(expiredKeys[i]))
+				tmpStr := utils.Substr(expiredKeys[i], len(redis.KeyCommentUserLikeIDsPF), len(expiredKeys[i]))
 				tmpStrArr := strings.Split(tmpStr, "_")
-				commentID, _ := strconv.ParseInt(tmpStrArr[0], 10, 64)
+				userID, _ := strconv.ParseInt(tmpStrArr[0], 10, 64)
 				objID, _ := strconv.ParseInt(tmpStrArr[1], 10, 64)
 				objType, _ := strconv.ParseInt(tmpStrArr[2], 10, 8)
 				
 				// 持久化
-				for i := 0; i < len(UserIDs); i++ {
-					userID, _ := strconv.ParseInt(UserIDs[i], 10, 64)
+				for i := 0; i < len(commentIDs); i++ {
+					commentID, _ := strconv.ParseInt(commentIDs[i], 10, 64)
+					if commentID == -1 { // 冗余数据无需持久化
+						continue
+					}
 					go func (_commentID, _userID, _objID int64, _objType int8)  {
 						if err := kafka.CreateCommentLikeOrHateUser(_commentID, _userID, _objID, _objType, like); err != nil {
 							logger.Errorf("workers:persistenceCidUidHelper: send message to kafka failed, reason: %v", err.Error())
@@ -148,7 +151,7 @@ func PersistenceCommentCidUid(like bool) {
 					}(commentID, userID, objID, int8(objType))
 				}
 
-				logger.Infof("workers:persistenceCidUidHelper: Persisted %d pieces of expired cid_uid from Redis to MySQL", len(UserIDs))
+				logger.Infof("workers:persistenceCidUidHelper: Persisted %d pieces of expired cid_uid from Redis to MySQL", len(commentIDs))
 			}
 
 			// 删除逻辑过期的 key

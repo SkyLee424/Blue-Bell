@@ -28,8 +28,6 @@ const (
 	KeyCommentContentStringPF = "bluebell:comment:content:"     // param:comment_id, value:content
 	KeyCommentLikeStringPF    = "bluebell:comment:like:"        // param comment_id, member: count
 	KeyCommentHateStringPF    = "bluebell:comment:hate:"        // param comment_id, member: count
-	KeyCommentLikeSetPF       = "bluebell:comment:likeset:"     // param cid_oid_otype, member: user_id
-	KeyCommentHateSetPF       = "bluebell:comment:hateset:"     // param cid_oid_otype, member: user_id
 	KeyCommentUserLikeIDsPF   = "bluebell:comment:userlikeids:" // param uid_oid_otype, member: comment_id
 	KeyCommentUserHateIDsPF   = "bluebell:comment:userhateids:" // param uid_oid_otype, member: comment_id
 	KeyCommentRemCidSet       = "bluebell:comment:rem:cid"      // member: comment_id

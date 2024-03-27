@@ -198,194 +198,47 @@ func deleteCommentMutex(uid_cid_oid_otype string) {
 	delete(commentCache, uid_cid_oid_otype)
 }
 
-func LikeOrHateForComment(userID, commentID, objID int64, objType int8, like bool) error {
-	key := fmt.Sprintf("%d_%d_%d_%d", userID, commentID, objID, objType)
-	mutex := getCommentMutex(key) // 保证拿到的 mutex 已经是上锁状态
-	// mutex.Lock()				  // 不要在这里上锁，如果在这里上锁，发生调度，调度到 deleteCommentMutex，将该锁删除，仍可能让后续 goroutine 获取到不同的锁
-	defer deleteCommentMutex(key)
-	defer mutex.Unlock()		  // 先释放锁，再 deleteCommentMutex，不然死锁
-
-	// 判断缓存是否 miss，如果 miss，重建
-	if err := rebuild.RebuildCommentIndex(objType, objID); err != nil {
-		return errors.Wrap(err, "logic.LikeOrHateForComment.RebuildCommentIndex")
-	}
-
+func LikeOrHateForComment1(userID, commentID, objID int64, objType int8, like bool) error {
 	/*
-		关于是否应该校验「评论是否存在」这个问题：
+	关于是否应该校验「评论是否存在」这个问题：
 
-		最终得出的结论是不需要校验，理由如下：
+	最终得出的结论是不需要校验，理由如下：
 
-		首先大部分请求都是来自前端的，这些请求应该是合法的，即评论是存在的
-		如果每次都校验，意味着必须先读 redis，「可能」会读 db
-		这会带来一定开销，对 db 也造成了压力（给子评论点赞势必读 db，并发高就🐔）
+	首先大部分请求都是来自前端的，这些请求应该是合法的，即评论是存在的
+	如果每次都校验，意味着必须先读 redis，「可能」会读 db
+	这会带来一定开销，对 db 也造成了压力（给子评论点赞势必读 db，并发高就🐔）
 
-		于是想到用布隆过滤：即缓存「存在的 comment_id」
-		key 为 bluebell:comment:exists:...
-		一个请求来了，判断 comment_id 是否存在于布隆过滤器：
-		
-		- 不存在，reject
-		- 存在，允许下一步操作（这个有一定误差，布隆过滤的性质决定）
+	于是想到用布隆过滤：即缓存「存在的 comment_id」
+	key 为 bluebell:comment:exists:...
+	一个请求来了，判断 comment_id 是否存在于布隆过滤器：
+	
+	- 不存在，reject
+	- 存在，允许下一步操作（这个有一定误差，布隆过滤的性质决定）
 
-		那么问题来了，这个 key 按道理应该设置一个过期时间，如果 key 过期，
-		下一次访问这个 key，肯定要从 db 重建，还是会对 db 造成冲击
-		
-		缓存空对象这个方法就更没意思了，如果攻击者一直换不同的 comment_id，缓存根本不会命中
-		
-		总结：不需要校验评论是否存在，因为：
-		- 大部分请求合法
-		- 使用布隆过滤，避免非法请求，也会带来相似的成本开销
-		- 可以对单个用户限流
+	那么问题来了，这个 key 按道理应该设置一个过期时间，如果 key 过期，
+	下一次访问这个 key，肯定要从 db 重建，还是会对 db 造成冲击
+	
+	缓存空对象这个方法就更没意思了，如果攻击者一直换不同的 comment_id，缓存根本不会命中
+	
+	总结：不需要校验评论是否存在，因为：
+	- 大部分请求合法
+	- 使用布隆过滤，避免非法请求，也会带来相似的成本开销
+	- 可以对单个用户限流
 	*/
 	
-	// 判断该用户是否点赞（踩）过
-	pre, err := redis.CheckCommentLikeOrHateIfExistUser(commentID, userID, objID, objType, like)
-	if err != nil {
-		return errors.Wrap(err, "logic:LikeOrHateForComment: CheckCommentLikeOrHateIfExistUser")
-	}
-
-	if !pre { // 可能没有点赞过
-		// check if cache miss
-		key := redis.KeyCommentLikeSetPF
-		if !like {
-			key = redis.KeyCommentHateSetPF
-		}
-		// key = key + strconv.FormatInt(commentID, 10)
-		key = fmt.Sprintf("%s%d_%d_%d", key, commentID, objID, objType)
-		exist, err := redis.Exists(key)
-		if err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: Exists")
-		}
-		if !exist {
-			// cache miss,
-			// 由于加了缓存，bluebell:comment:rem:cid 可能还没来得及持久化到 db（删除 cid），如果直接重建，会获取到脏数据
-			// 先检查一下，确定是否重建
-			exist2, err := redis.CheckCommentRemCidIfExistCid(commentID)
-
-			if err == nil && exist2 { // 说明用户尝试过取消点赞，但还没来得及持久化到 db 的 ciduid 表
-				pre = false
-			} else { // 不存在，cache rebuild
-				pre, err = rebuild.RebuildCommentLikeOrHateSet(commentID, userID, objID, objType, like)
-				if err != nil {
-					return errors.Wrap(err, "logic:LikeOrHateForComment: RebuildCommentLikeOrHateSet")
-				}
-			}
-		}
-	}
-
-	if pre { // 取消点赞（踩）
-		if err := redis.RemCommentLikeOrHateUser(commentID, userID, objID, objType, like); err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentLikeOrHateUser")
-		}
-		// 还要删除 db 的 cid_uid
-		// 这里添加到缓存，由后台任务负责删除
-		if err := redis.AddCommentRemCid(commentID); err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentRemCidUid")
-		}
-
-		// 还要删除缓存 bluebell:comment:userlikeids:
-		if err := redis.RemCommentUserLikeOrHateMapping(userID, commentID, objID, objType, like); err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentLikeOrHateUser")
-		}
-	} else { // 点赞（踩）
-		// 先删可能存在的 bluebell:comment:rem:cid_uid（用户之前取消过点赞）
-		// 防止后台任务将我们刚刚添加的 cid_uid 从 db 删掉（这样会导致可以重复点赞）
-		if err := redis.RemCommentRemCid(commentID); err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentRemCidUid")
-		}
-		if err := redis.AddCommentLikeOrHateUser(commentID, userID, objID, objType, like); err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentLikeOrHateUser")
-		}
-
-		// 写缓存 bluebell:comment:userlike(hate)ids:
-		// 尝试重建，由 rebuild 判断需不需要重建
-		_, _, err = rebuild.RebuildCommentUserLikeOrHateMapping(userID, objID, objType, like)
-		if err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: RebuildCommentUserLikeOrHateMapping")
-		}
-
-		err = redis.AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID, objType, like, []int64{commentID})
-		if err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentUserLikeOrHateMapping")
-		}
-	}
-
-	offset := 1
-	if pre {
-		offset = -1
-	}
-
-	if err = redis.IncrCommentLikeOrHateCount(commentID, offset, like); err != nil {
-		return errors.Wrap(err, "logic:LikeOrHateForComment: IncrCommentIndexCountField")
-	}
-
-	// 更新缓存(if exists)
-	cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, commentID)
-	comment, err := localcache.GetLocalCache().Get(cacheKey)
-	if err == nil {
-		tmp := comment.(models.CommentDTO)
-		tmp.Like += offset
-		if err = localcache.GetLocalCache().Set(cacheKey, tmp); err != nil {
-			logger.Warnf("logic:LikeOrHateForComment: Update local cache failed, reason: %v", err.Error())
-		}
-	}
-
-	return nil
-}
-
-func LikeOrHateForComment1(userID, commentID, objID int64, objType int8, like bool) error {
 	// 尝试重建 KeyCommentUserLikeIDsPF
+	key := fmt.Sprintf("%d_%d_%d_%d", userID, commentID, objID, objType)
+	mutex := getCommentMutex(key) // 保证拿到的 mutex 已经是上锁状态
 	rebuild.RebuildCommentUserLikeOrHateMapping(userID, objID, objType, like)
-
+	mutex.Unlock()		  // 先释放锁，再 deleteCommentMutex，不然死锁
+	deleteCommentMutex(key)
+	
 	// 执行 lua 脚本
-	// 1. 判断用户是否点赞过
-	liked, err := redis.CheckCommentUserLikeOrHateMappingIfExistComment(commentID, userID, objID, objType, like) // SISMEMBER bluebell:comment:userlikeids:uid_oid_otype comment_id
-	if err != nil {
-		return errors.Wrap(err, "logic:LikeOrHateForComment: CheckCommentLikeOrHateIfExistUser")
+	if err := redis.EvalCommentLikeOrHate(commentID, userID, objID, objType, like); err != nil {
+		return errors.Wrap(err, "logic:LikeOrHateForComment: EvalCommentLikeOrHate")
 	}
 
-	if liked {
-		// 2.1 如果用户点赞过，执行取消点赞逻辑
-		
-		// 删除 db 的 cid_uid
-		// 这里添加到缓存，由后台任务负责删除
-		// SADD bluebell:comment:rem:cid comment_id
-		if err := redis.AddCommentRemCid(commentID); err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentRemCidUid")
-		}
-		
-		// 还要删除缓存 bluebell:comment:userlikeids:
-		// SREM bluebell:comment:userlikeids:uid_oid_otype comment_id
-		if err := redis.RemCommentUserLikeOrHateMapping(userID, commentID, objID, objType, like); err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentLikeOrHateUser")
-		}
-	} else {
-		// 2.2 否则，执行点赞逻辑
-		
-		// 先删可能存在的 bluebell:comment:rem:cid_uid（用户之前取消过点赞）
-		// 防止后台任务将我们刚刚添加的 cid_uid 从 db 删掉（这样会导致可以重复点赞）
-		// SREM bluebell:comment:rem:cid comment_id
-		if err := redis.RemCommentRemCid(commentID); err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: RemCommentRemCidUid")
-		}
-		
-		// 写缓存 bluebell:comment:userlike(hate)ids:
-		// SADD bluebell:comment:userlikeids:uid_oid_otype comment_id
-		err = redis.AddCommentUserLikeOrHateMappingByCommentIDs(userID, objID, objType, like, []int64{commentID})
-		if err != nil {
-			return errors.Wrap(err, "logic:LikeOrHateForComment: AddCommentUserLikeOrHateMapping")
-		}
-	}
-
-	// 3. 修改点赞数
-	offset := 1
-	if liked {
-		offset = -1
-	}
-	if err = redis.IncrCommentLikeOrHateCount(commentID, offset, like); err != nil {
-		return errors.Wrap(err, "logic:LikeOrHateForComment: IncrCommentIndexCountField")
-	}
-
-	// 4. 删除可能存在的本地缓存
+	// 删除可能存在的本地缓存
 	cacheKey := fmt.Sprintf("%v_%v_metadata", objects.ObjComment, commentID)
 	localcache.GetLocalCache().Remove(cacheKey)
 	
