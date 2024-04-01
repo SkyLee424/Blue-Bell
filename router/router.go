@@ -96,6 +96,10 @@ func Init() {
 	emailGrp := v1.Group("/email")
 	emailGrp.POST("/verification", controller.EmailSendVerificationCodeHandler)
 	emailGrp.GET("/verification", controller.EmailGetVerificationCodeHandler)
+
+	/* Empty */
+	v1.GET("/empty0", controller.EmptyHandler0) // 空接口
+	v1.GET("/empty1", middleware.Auth(), middleware.VerifyToken(), controller.EmptyHandler1) // 空接口，但有鉴权
 }
 
 func GetServer() *http.Server {
