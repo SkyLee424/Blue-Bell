@@ -30,7 +30,7 @@ const (
 //	@Param			Authorization	header	string					false	"Bearer 用户令牌"
 //	@Param			object			body	models.ParamCreatePost	false	"帖子的详细信息"
 //	@Security		ApiKeyAuth
-//	@Success		200	{object}	common.Response
+//	@Success		200	{object}	common.Response{data=common.ResponsePostCreate}
 //	@Router			/post/create [post]
 func CreatePostHandler(ctx *gin.Context) {
 	// 解析数据
@@ -77,10 +77,12 @@ func CreatePostHandler(ctx *gin.Context) {
 	}
 
 	// 返回
-	common.ResponseSuccess(ctx, nil) // 暂时返回 nil
+	common.ResponseSuccess(ctx, common.ResponsePostCreate{
+		PostID: post.PostID,
+	})
 }
 
-// CreatePostHandler 获取帖子详情接口
+// PostDetailHandler 获取帖子详情接口
 //
 //	@Summary		获取帖子详情接口
 //	@Description	创建帖子的接口

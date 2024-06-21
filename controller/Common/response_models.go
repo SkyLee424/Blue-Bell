@@ -27,6 +27,10 @@ type ResponseUserInfo struct {
 	Posts    []models.PostDTO `json:"posts"`
 }
 
+type ResponsePostCreate struct {
+	PostID int64 `json:"post_id,string"`
+}
+
 type ResponsePostDetail struct {
 	AuthorInfo struct {
 		AuthorID   int64  `json:"author_id,string"`
