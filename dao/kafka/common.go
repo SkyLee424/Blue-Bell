@@ -106,9 +106,9 @@ func InitKafka() {
 	createTopic(TopicEmail, PartitionNumOfEmail, ReplicationFactorOfEmail)
 
 	// 初始化 consumer
-	initConsumer(PartitionNumOfComment, ReplicationFactorOfComment, TopicComment, GroupComment)
-	initConsumer(PartitionNumOfLike, ReplicationFactorOfLike, TopicLike, GroupLike)
-	initConsumer(PartitionNumOfEmail, ReplicationFactorOfEmail, TopicEmail, GroupEmail)
+	initConsumer(PartitionNumOfComment, TopicComment, GroupComment)
+	initConsumer(PartitionNumOfLike, TopicLike, GroupLike)
+	initConsumer(PartitionNumOfEmail, TopicEmail, GroupEmail)
 }
 
 func Wait() {
@@ -197,7 +197,7 @@ func createTopic(topicName string, partitionNum, replicationFactor int) {
 }
 
 // 创建消费者
-func initConsumer(partitionNum, replicationFactor int, topic, group string) {
+func initConsumer(partitionNum int, topic, group string) {
 	// 每个 partition 对应一个 consumer
 	wg.Add(partitionNum)
 	for i := 0; i < partitionNum; i++ {

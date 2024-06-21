@@ -47,30 +47,30 @@ rootloop:
 
 		success := false
 		for i := 0; i < KafkaConsumerRetryTime; i++ {
-
+			err = nil
 			successKeys := make([]string, 0, len(msgs))
 			failedKeys := make([]string, 0, len(msgs)) // 保存因 conver error 造成失败的 commentID
 			tx := mysql.GetDB().Begin()                // 一批消息一个大的事务，整体成功或失败
 
-			for _, msg := range msgs { // 并行消费 msg
-				task := func(_msg kafka.Message) {
-					uniqueKey, errorType, err1 := convertAndConsume(tx, consumer, _msg)
-					if err1 != nil {
-						if errorType == ErrTypeTransaction {
-							err = errors.Wrap(err1, "kafka:CommentConsumer: convertAndConsume") // 保存事务中产生的错误
-						} else {
-							failedKeys = append(failedKeys, uniqueKey)
-						}
+			task := func(_msg kafka.Message) {
+				uniqueKey, errorType, err1 := convertAndConsume(tx, _msg)
+				if err1 != nil {
+					if errorType == ErrTypeTransaction {
+						err = errors.Wrap(err1, "kafka:CommentConsumer: convertAndConsume") // 保存事务中产生的错误
 					} else {
-						successKeys = append(successKeys, uniqueKey)
+						failedKeys = append(failedKeys, uniqueKey)
 					}
+				} else {
+					successKeys = append(successKeys, uniqueKey)
 				}
-
-				_msg := msg
-				task(_msg)
 			}
 
-			// wg0.Wait() // 等待这一批数据处理完成
+			for _, msg := range msgs { // 串行消费 msg
+				task(msg)
+				if err != nil {
+					break
+				}
+			}
 
 			if err != nil { // 说明在整个事务中，出现了错误，需要回滚事务，「不」向 kafka server 提交 offset
 				// 打印日志
@@ -114,7 +114,7 @@ rootloop:
 }
 
 // 返回 uniqueKey、error_type、error （可能是 convert，也可能是 consume）
-func convertAndConsume(tx *gorm.DB, consumer *kafka.Reader, msg kafka.Message) (string, int, error) {
+func convertAndConsume(tx *gorm.DB, msg kafka.Message) (string, int, error) {
 	var metadata Message
 	err := json.Unmarshal(msg.Value, &metadata)
 	if err != nil {
@@ -127,7 +127,7 @@ func convertAndConsume(tx *gorm.DB, consumer *kafka.Reader, msg kafka.Message) (
 
 	switch metadata.Type {
 	case TypeCommentCreate:
-		return handleCommentCreate(tx, msg, data)
+		return handleCommentCreate(tx, data)
 
 	case TypeCommentRemove:
 		return handleCommentRemove(tx, data)
@@ -177,14 +177,14 @@ func fetchMessages(ctx context.Context, reader *kafka.Reader, n int) ([]kafka.Me
 	return list, nil
 }
 
-func handleCommentCreate(tx *gorm.DB, msg kafka.Message, data []byte) (string, int, error) {
+func handleCommentCreate(tx *gorm.DB, data []byte) (string, int, error) {
 	var params CommentCreate
 	err := json.Unmarshal(data, &params)
 	if err != nil {
 		return "", ErrTypeConvert, errors.Wrap(err, "kafka:handleCommentCreate: Unmarshal(params)")
 	}
 
-	res := createComment(tx, msg, params)
+	res := createComment(tx, params)
 	if res.Err != nil {
 		return "", ErrTypeTransaction, errors.Wrap(res.Err, "kafka:handleCommentCreate: createComment")
 	}
@@ -255,9 +255,6 @@ func handleLikeOrHateMappingRemove(tx *gorm.DB, data []byte) (string, int, error
 		return "", ErrTypeConvert, errors.Wrap(err, "kafka:handleLikeOrHateMappingRemoveByCommentIDs: Unmarshal(params)")
 	}
 
-	if err != nil {
-		return "", ErrTypeConvert, errors.Wrap(err, "kafka:handleLikeOrHateMappingRemoveByCommentIDs: ConvertStringSliceToInt64Slice")
-	}
 	res := removeCommentUserLikeMappingByCommentIDs(tx, params.CommentID)
 	if res.Err != nil {
 		return "", ErrTypeTransaction, errors.Wrap(res.Err, "kafka:handleLikeOrHateMappingRemoveByCommentIDs: incrCommentIndexCountField")
@@ -273,9 +270,6 @@ func handleEmailSendVerificationCode(data []byte) (string, int, error) {
 		return "", ErrTypeConvert, errors.Wrap(err, "kafka:handleEmailSend: Unmarshal(params)")
 	}
 
-	if err != nil {
-		return "", ErrTypeConvert, errors.Wrap(err, "kafka:handleEmailSend: ConvertStringSliceToInt64Slice")
-	}
 	res := sendEmailVerificationCode(params)
 	if res.Err != nil {
 		return "", ErrTypeTransaction, errors.Wrap(res.Err, "kafka:handleEmailSend: sendEmail")
