@@ -12,8 +12,8 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
-	"github.com/segmentio/kafka-go"
 	"gorm.io/gorm"
+	sql "github.com/go-sql-driver/mysql"
 )
 
 func GetCommentCreateUniqueKey(commentID int64) string {
@@ -24,7 +24,7 @@ func GetCommentRemoveUniqueKey(commentID int64) string {
 	return fmt.Sprintf("remove_%v", commentID)
 }
 
-func createComment(tx *gorm.DB, msg kafka.Message, params CommentCreate) (res Result) {
+func createComment(tx *gorm.DB, params CommentCreate) (res Result) {
 	// logger.Debugf("createComment: key: %v, partition: %v, offset: %v, comment_id: %v, content: %v\n", string(msg.Key), msg.Partition, msg.Offset, params.CommentID, params.Message)
 	res.UniqueKey = GetCommentCreateUniqueKey(params.CommentID)
 
@@ -47,11 +47,13 @@ func createComment(tx *gorm.DB, msg kafka.Message, params CommentCreate) (res Re
 		return
 	}
 	if exist == 0 {
-		if err := mysql.CreateCommentSubject(tx, params.CommentID, params.ObjID, params.ObjType); err != nil {
-			if !errors.Is(err, gorm.ErrDuplicatedKey) { // 其它错误，事务失败
-				res.Err = errors.Wrap(err, "kafka:CreateComment: SelectCommentSubjectCount")
+		if err := mysql.CreateCommentSubject(tx, params.ObjID, params.ObjType); err != nil {
+			e, ok := errors.Cause(err).(*sql.MySQLError)
+			if !ok || e.Number != 1062 {
+				res.Err = errors.Wrap(err, "kafka:CreateComment: CreateCommentSubject")
 				return
 			}
+			// 忽略冲突错误（获取 count 是快照读，不一定是最新的数据）
 		}
 	}
 
