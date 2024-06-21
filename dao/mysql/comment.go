@@ -16,11 +16,10 @@ func CreateCommentContent(tx *gorm.DB, content *models.CommentContent) error {
 	return errors.Wrap(res.Error, "mysql: CreateCommentContent failed")
 }
 
-func CreateCommentSubject(tx *gorm.DB, ID, objID int64, objType int8) error {
+func CreateCommentSubject(tx *gorm.DB, objID int64, objType int8) error {
 	useDB := getUseDB(tx)
 
 	commentSubject := &models.CommentSubject{
-		ID:        ID,
 		ObjID:     objID,
 		ObjType:   objType,
 		Count:     0,

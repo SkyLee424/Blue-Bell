@@ -1,7 +1,7 @@
 package models
 
 type CommentSubject struct {
-	ID        int64 `gorm:"primaryKey" json:"id"`
+	ID        int64 `gorm:"primaryKey,auto_increment" json:"id"`
 	ObjID     int64 `gorm:"column:obj_id" json:"obj_id"`
 	ObjType   int8  `gorm:"column:obj_type" json:"obj_type"`
 	Count     int   `gorm:"column:count" json:"count"`

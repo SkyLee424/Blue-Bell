@@ -47,19 +47,24 @@ func initTables() {
 }
 
 func initIndices()  {
-	createUnionIndexIfNotExists("idx_cid_uid", "comment_user_like_mappings", "comment_id, user_id")
-	createUnionIndexIfNotExists("idx_cid_uid", "comment_user_hate_mappings", "comment_id, user_id")
-	createUnionIndexIfNotExists("idx_uid_oid_otype", "comment_user_like_mappings", "user_id, obj_id, obj_type")
-	createUnionIndexIfNotExists("idx_uid_oid_otype", "comment_user_like_mappings", "user_id, obj_id, obj_type")
+	createUnionIndexIfNotExists("idx_cid_uid", "comment_user_like_mappings", "comment_id, user_id", false)
+	createUnionIndexIfNotExists("idx_cid_uid", "comment_user_hate_mappings", "comment_id, user_id", false)
+	createUnionIndexIfNotExists("idx_uid_oid_otype", "comment_user_like_mappings", "user_id, obj_id, obj_type", false)
+	createUnionIndexIfNotExists("idx_uid_oid_otype", "comment_user_like_mappings", "user_id, obj_id, obj_type", false)
+	createUnionIndexIfNotExists("idx_oid_otype", "comment_subjects", "obj_id, obj_type", true)
 }
 
-func createUnionIndexIfNotExists(indexName, tableName, columns string) {
+func createUnionIndexIfNotExists(indexName, tableName, columns string, unique bool) {
     var indexCount int64
     db.Raw("SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_NAME = ? AND INDEX_NAME = ?", tableName, indexName).Count(&indexCount)
 
     if indexCount == 0 {
         // 不存在则创建索引
-        db.Exec(fmt.Sprintf("CREATE INDEX %s ON %s(%s);", indexName, tableName, columns))
+		sql := fmt.Sprintf("CREATE INDEX %s ON %s(%s);", indexName, tableName, columns)
+		if unique {
+			sql = fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s(%s);", indexName, tableName, columns)
+		}
+		db.Exec(sql)
     }
 }
 
