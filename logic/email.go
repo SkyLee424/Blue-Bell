@@ -27,8 +27,8 @@ func SendEmailVerificationCode(params models.ParamSendEmailVerificationCode) err
 	return nil
 }
 
-func GetEmailVerificationCode(params models.ParamVerifyEmailVerificationCode) (string, error) {
-	code, err := redis.GetEmailVerificationCode(params.Email)
+func GetEmailVerificationCode(email string) (string, error) {
+	code, err := redis.GetEmailVerificationCode(email)
 	return code, errors.Wrap(err, "logic:GetEmailVerificationCode")
 }
 

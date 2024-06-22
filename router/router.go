@@ -95,7 +95,6 @@ func Init() {
 	/* Email */
 	emailGrp := v1.Group("/email")
 	emailGrp.POST("/verification", controller.EmailSendVerificationCodeHandler)
-	emailGrp.GET("/verification", controller.EmailGetVerificationCodeHandler)
 
 	/* Empty */
 	v1.GET("/empty0", controller.EmptyHandler0) // 空接口

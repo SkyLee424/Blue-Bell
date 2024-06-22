@@ -35,6 +35,18 @@ func UserRegisterHandler(ctx *gin.Context) {
 		return
 	}
 
+	// 邮箱校验
+	code, err := logic.GetEmailVerificationCode(usr.Email)
+	if err != nil {
+		common.ResponseError(ctx, common.CodeInternalErr)
+		logger.ErrorWithStack(err)
+		return
+	}
+	if code != usr.Code {
+		common.ResponseError(ctx, common.CodeInvalidVerificationCode)
+		return
+	}
+
 	// 注册
 	access_token, refresh_token, err := logic.UserRegist(&models.User{
 		UserName: usr.Username, 

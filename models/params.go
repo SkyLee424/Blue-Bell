@@ -11,6 +11,7 @@ type ParamUserRegist struct {
 	RePassword string `json:"re_password" binding:"required,eqfield=Password"`
 	Email      string `json:"email" binding:"required,min=1,max=256"`
 	Avatar     string `json:"avatar" binding:"required,max=512"`
+	Code       string `form:"code" binding:"required"`
 }
 
 type ParamUserLogin struct {
@@ -112,9 +113,4 @@ type ParamCommunityCreate struct {
 /* Email */
 type ParamSendEmailVerificationCode struct {
 	Email string `form:"email" binding:"required"`
-}
-
-type ParamVerifyEmailVerificationCode struct {
-	Email string `form:"email" binding:"required"`
-	Code  string `form:"code" binding:"required"`
 }
